@@ -4,6 +4,7 @@ import { MapPin, Navigation, ExternalLink, ShieldCheck, Crosshair, Loader2 } fro
 export const GoogleMapView = ({
   origin, // { lat, lon, label } or address string
   destination, // { lat, lon, label } or address string
+  waypoints = [], // Array of { lat, lon, displayName }
   height = '400px',
   className = '',
   onLocateMe, // Optional callback to trigger geolocation from map controls
@@ -26,13 +27,26 @@ export const GoogleMapView = ({
       ? encodeURIComponent(destination.displayName)
       : destination || 'Electronic City, Bangalore, India';
 
-  // Google Maps Directions Embed URL (Free, zero-config, live road network & route)
-  const embedUrl = `https://maps.google.com/maps?saddr=${originQuery}&daddr=${destQuery}&t=${
+  // Build waypoints string for Google Maps ("+to:" syntax in daddr)
+  const waypointSegments = waypoints
+    .filter((wp) => wp?.lat && wp?.lon)
+    .map((wp) => `${wp.lat},${wp.lon}`)
+    .map((coord) => `+to:${coord}`)
+    .join('');
+
+  // Google Maps Directions Embed URL with waypoints support
+  const embedUrl = `https://maps.google.com/maps?saddr=${originQuery}&daddr=${destQuery}${waypointSegments}&t=${
     mapType === 'satellite' ? 'k' : 'm'
   }&output=embed`;
 
   // External live navigation link in Google Maps App / Website
-  const externalGmapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originQuery}&destination=${destQuery}&travelmode=driving`;
+  const waypointsParam = waypoints
+    .filter((wp) => wp?.lat && wp?.lon)
+    .map((wp) => `${wp.lat},${wp.lon}`)
+    .join('|');
+  const externalGmapsUrl = `https://www.google.com/maps/dir/?api=1&origin=${originQuery}&destination=${destQuery}${
+    waypointsParam ? `&waypoints=${encodeURIComponent(waypointsParam)}` : ''
+  }&travelmode=driving`;
 
   const isCurrentGpsOrigin = typeof origin === 'object' && origin?.isCurrentLocation;
 
@@ -116,7 +130,7 @@ export const GoogleMapView = ({
       {/* Official Google Maps Render Frame */}
       <div className="flex-1 w-full relative">
         <iframe
-          key={`${originQuery}-${destQuery}-${mapType}`}
+          key={`${originQuery}-${destQuery}-${mapType}-${waypoints.length}`}
           title="Google Maps Route"
           width="100%"
           height="100%"
@@ -143,7 +157,9 @@ export const GoogleMapView = ({
             )
           </span>
         </div>
-        <span className="text-[10px] text-slate-400">Live Google Maps Directions</span>
+        <span className="text-[10px] text-slate-400">
+          Live Google Maps Directions{waypoints.length > 0 ? ` • ${waypoints.length} stop(s)` : ''}
+        </span>
       </div>
     </div>
   );
