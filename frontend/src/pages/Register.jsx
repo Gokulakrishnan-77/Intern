@@ -165,8 +165,19 @@ export const Register = ({ onNavigateToLogin, onRegisterSuccess, registeredUsers
           return;
         }
       } catch (apiErr) {
+        console.error('[Register API Error]:', apiErr);
         if (apiErr.response?.status === 409) {
           setErrors({ email: apiErr.response.data?.message || 'An account with this email already exists' });
+          setLoading(false);
+          return;
+        }
+        if (apiErr.response?.data?.message) {
+          setErrors({ form: apiErr.response.data.message });
+          setLoading(false);
+          return;
+        }
+        if (apiErr.message) {
+          setErrors({ form: `Connection error: ${apiErr.message}. Please check if the backend server is reachable.` });
           setLoading(false);
           return;
         }
