@@ -92,69 +92,13 @@ export const Login = ({ onNavigateToRegister, onLoginSuccess, registeredUsers = 
           }
         }
 
-        // Backend is offline / unreachable on port 5000
-        console.warn('Backend server offline or unreachable on port 5000:', apiErr.message);
-
-        // Offline Administrator Krish Access
-        if (inputEmail === 'jacksnow0777@gmail.com') {
-          if (formData.password === 'Gokul@165') {
-            const adminUser = {
-              id: '735dbe37-e58d-4d7b-96e9-867f06a11802',
-              name: 'Krish',
-              email: 'jacksnow0777@gmail.com',
-              role: 'admin',
-              verificationStatus: 'verified',
-              status: 'Active',
-              rating: 5,
-              reliabilityScore: 100,
-            };
-            localStorage.setItem('rideshare_user', JSON.stringify(adminUser));
-            setServerMessage({
-              type: 'success',
-              text: 'Welcome Master Administrator Krish! Logging you into Command Center...',
-            });
-            setTimeout(() => {
-              if (onLoginSuccess) onLoginSuccess(adminUser);
-            }, 600);
-            return;
-          } else {
-            setServerMessage({
-              type: 'error',
-              text: 'Incorrect password for Administrator Krish.',
-            });
-            return;
-          }
-        }
-
-        // If backend is offline and not admin
-        const foundUser = registeredUsers.find(
-          (u) => u.email.trim().toLowerCase() === inputEmail
-        );
-
-        if (!foundUser) {
-          setServerMessage({
-            type: 'error',
-            text: 'Backend server is offline (http://localhost:5000). Please start the backend server with "npm run dev".',
-          });
-          return;
-        }
-
-        if (foundUser.password && foundUser.password !== formData.password) {
-          setServerMessage({
-            type: 'error',
-            text: 'Incorrect password. Please check your password and try again.',
-          });
-          return;
-        }
-
+        // Network error reaching backend API
         setServerMessage({
-          type: 'success',
-          text: `Welcome back, ${foundUser.name}! Logging you in...`,
+          type: 'error',
+          text: apiErr.message
+            ? `Connection error: ${apiErr.message}. Please check if the backend is reachable.`
+            : 'Unable to connect to database server. Please try again.',
         });
-
-        setTimeout(() => {
-          if (onLoginSuccess) onLoginSuccess(foundUser);
-        }, 600);
         return;
       }
     } catch (err) {
@@ -223,54 +167,6 @@ export const Login = ({ onNavigateToRegister, onLoginSuccess, registeredUsers = 
               <span>{serverMessage.text}</span>
             </div>
           )}
-
-          {/* Quick Demo Login Buttons */}
-          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-2">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-              Quick Test Accounts (Click to Fill):
-            </span>
-            <div className="grid grid-cols-3 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setFormData({ email: 'harish@rideshare.com', password: 'Driver@123' });
-                  setErrors({});
-                  setServerMessage(null);
-                  setAccountNotFound(false);
-                }}
-                className="py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
-              >
-                <span>🚗 Driver</span>
-                <span className="text-[10px] font-normal text-purple-600">Harish</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFormData({ email: 'jacksnow0777@gmail.com', password: 'Gokul@165' });
-                  setErrors({});
-                  setServerMessage(null);
-                  setAccountNotFound(false);
-                }}
-                className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
-              >
-                <span>🛡️ Admin</span>
-                <span className="text-[10px] font-normal text-amber-700">Krish</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setFormData({ email: 'probe_test_999@example.com', password: 'Password@123' });
-                  setErrors({});
-                  setServerMessage(null);
-                  setAccountNotFound(false);
-                }}
-                className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
-              >
-                <span>👤 Rider</span>
-                <span className="text-[10px] font-normal text-emerald-700">Test User</span>
-              </button>
-            </div>
-          </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Address */}

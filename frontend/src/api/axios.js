@@ -8,7 +8,6 @@ const API_BASE_URL = getDefaultBaseURL();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
-  withCredentials: true, // Send httpOnly cookies (refresh token)
   headers: {
     'Content-Type': 'application/json',
   },
