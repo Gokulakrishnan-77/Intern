@@ -55,10 +55,26 @@ const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
   return Number((R * c).toFixed(2));
 };
 
+// Common stop-words to EXCLUDE from keyword matching (too generic, cause false matches)
+const LOCATION_STOP_WORDS = new Set([
+  'road', 'street', 'main', 'near', 'area', 'town', 'city', 'east', 'west',
+  'north', 'south', 'lane', 'nagar', 'cross', 'gate', 'block', 'phase',
+  'sector', 'plot', 'line', 'station', 'stop', 'junction', 'circle',
+  'district', 'state', 'india', 'tamil', 'nadu', 'karnataka', 'kerala',
+  'bypass', 'bridge', 'colony', 'layout', 'extension', 'tower', 'park',
+  'garden', 'center', 'centre', 'village', 'post', 'office', 'temple',
+  'church', 'mosque', 'market', 'bazaar', 'highway', 'national', 'ring',
+  'outer', 'inner', 'old', 'new', 'bus', 'railway', 'metro',
+]);
+
 // STRICT DUAL-MATCHING LOGIC: Matches BOTH Pickup AND Destination
-const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranceKm = 5) => {
-  // Rule 1: Driver must be verified by Admin Krish
+const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranceKm = 3) => {
+  // Rule 1: Driver must be verified
   if (ride.driver?.verificationStatus !== 'verified') return false;
+
+  // Rule 2: Must have at least 1 available seat
+  const seats = ride.availableSeats ?? ride.seatsAvailable ?? 0;
+  if (seats <= 0) return false;
 
   const riderOrigText = (
     riderOrigin?.displayName ||
@@ -75,16 +91,21 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
   const driverOrigText = (ride.origin?.address || ride.origin || '').toLowerCase();
   const driverDestText = (ride.destination?.address || ride.destination || '').toLowerCase();
 
-  // Keyword extraction (words with 3+ chars)
-  const origKeywords = riderOrigText.split(/[\s,]+/).filter((w) => w.length > 3);
-  const destKeywords = destKeywordsExtract(riderDestText);
+  // Extract meaningful keywords: 5+ chars, not stop-words
+  const extractKeywords = (text) =>
+    text
+      .split(/[\s,\-–—()]+/)
+      .map((w) => w.replace(/[^a-z0-9]/g, ''))
+      .filter((w) => w.length >= 5 && !LOCATION_STOP_WORDS.has(w));
 
-  function destKeywordsExtract(text) {
-    return text.split(/[\s,]+/).filter((w) => w.length > 3);
-  }
+  const origKeywords = extractKeywords(riderOrigText);
+  const destKeywords = extractKeywords(riderDestText);
 
-  // 1. Pickup Point Match Check
-  let pickupMatches = origKeywords.some((kw) => driverOrigText.includes(kw));
+  // 1. Pickup Point Match — require at least 2 keywords to match, or 1 if only 1 keyword exists
+  const origMatches = origKeywords.filter((kw) => driverOrigText.includes(kw));
+  const minOrigRequired = Math.min(2, origKeywords.length);
+  let pickupMatches = origMatches.length >= minOrigRequired && origMatches.length > 0;
+
   if (
     !pickupMatches &&
     riderOrigin?.lat &&
@@ -101,8 +122,11 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
     pickupMatches = pickupDist <= toleranceKm;
   }
 
-  // 2. Destination Point Match Check
-  let destMatches = destKeywords.some((kw) => driverDestText.includes(kw));
+  // 2. Destination Point Match — same strict keyword logic
+  const destMatches_arr = destKeywords.filter((kw) => driverDestText.includes(kw));
+  const minDestRequired = Math.min(2, destKeywords.length);
+  let destMatches = destMatches_arr.length >= minDestRequired && destMatches_arr.length > 0;
+
   if (
     !destMatches &&
     riderDestination?.lat &&
@@ -119,7 +143,7 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
     destMatches = destDist <= toleranceKm;
   }
 
-  // STRICT REQUIREMENT: BOTH MUST BE TRUE. If one fails, the driver is excluded!
+  // STRICT REQUIREMENT: BOTH pickup and destination MUST match
   return pickupMatches && destMatches;
 };
 
