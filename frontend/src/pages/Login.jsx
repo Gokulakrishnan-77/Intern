@@ -224,6 +224,54 @@ export const Login = ({ onNavigateToRegister, onLoginSuccess, registeredUsers = 
             </div>
           )}
 
+          {/* Quick Demo Login Buttons */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 space-y-2">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Quick Test Accounts (Click to Fill):
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ email: 'harish@rideshare.com', password: 'Driver@123' });
+                  setErrors({});
+                  setServerMessage(null);
+                  setAccountNotFound(false);
+                }}
+                className="py-1.5 px-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
+              >
+                <span>🚗 Driver</span>
+                <span className="text-[10px] font-normal text-purple-600">Harish</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ email: 'jacksnow0777@gmail.com', password: 'Gokul@165' });
+                  setErrors({});
+                  setServerMessage(null);
+                  setAccountNotFound(false);
+                }}
+                className="py-1.5 px-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
+              >
+                <span>🛡️ Admin</span>
+                <span className="text-[10px] font-normal text-amber-700">Krish</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFormData({ email: 'probe_test_999@example.com', password: 'Password@123' });
+                  setErrors({});
+                  setServerMessage(null);
+                  setAccountNotFound(false);
+                }}
+                className="py-1.5 px-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-bold rounded-lg transition-all text-center flex flex-col items-center"
+              >
+                <span>👤 Rider</span>
+                <span className="text-[10px] font-normal text-emerald-700">Test User</span>
+              </button>
+            </div>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Email Address */}
             <div>

@@ -35,7 +35,43 @@ export const seedDatabase = async () => {
       console.log(`[SQL Seed] Master Administrator (${adminName} <${adminEmail}>) verified.`);
     }
 
-    // Zero dummy users seeded - Clean database ready for real users
+    // 2. Ensure Verified Driver Harish exists
+    const driverEmail = 'harish@rideshare.com';
+    let driver = await User.findOne({ where: { email: driverEmail } });
+    if (!driver) {
+      const hashedDriverPassword = await bcrypt.hash('Driver@123', 10);
+      driver = await User.create({
+        name: 'Harish Driver',
+        email: driverEmail,
+        password: hashedDriverPassword,
+        phone: '+91 98765 43211',
+        gender: 'Male',
+        age: 32,
+        address: '42 Greenway Street, Bangalore',
+        role: 'driver',
+        verificationStatus: 'verified',
+        status: 'Active',
+        rating: 4.9,
+        reliabilityScore: 99,
+      });
+
+      await Vehicle.create({
+        userId: driver.id,
+        type: 'car',
+        make: 'Toyota',
+        model: 'Innova Crysta',
+        year: 2023,
+        plateNumber: 'KA-05-MJ-4321',
+        color: 'Silver Grey',
+        seats: 4,
+        helmetProvided: true,
+        licenseNumber: 'DL-2023-KA059871',
+        licenseExpiry: '2030-12-31',
+      });
+      console.log('[SQL Seed] Verified Driver (Harish <harish@rideshare.com>) created successfully.');
+    } else {
+      console.log('[SQL Seed] Verified Driver (Harish <harish@rideshare.com>) verified.');
+    }
   } catch (error) {
     console.error('[SQL Seed Error] Failed to seed database:', error);
   }

@@ -354,12 +354,12 @@ export default function App() {
               }`}
               title={
                 isBackendOnline
-                  ? 'Connected to SQLite Relational Database Engine'
+                  ? 'Connected to PostgreSQL Relational Database Engine'
                   : 'Running in Local Cache Mode (Start backend server to sync SQL)'
               }
             >
               <Database className={`w-3 h-3 ${isBackendOnline ? 'text-emerald-600' : 'text-slate-400'}`} />
-              <span>{isBackendOnline ? 'SQL Database: Online (SQLite)' : 'SQL: Standby'}</span>
+              <span>{isBackendOnline ? 'SQL Database: Online (PostgreSQL)' : 'SQL: Standby'}</span>
             </span>
 
             {currentUser ? (
