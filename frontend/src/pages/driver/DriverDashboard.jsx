@@ -773,7 +773,6 @@ export const DriverDashboard = ({
             </span>
           </div>
         </div>
-        </div>
       </div>
 
       {submissionNotice && (
@@ -818,7 +817,7 @@ export const DriverDashboard = ({
               onClick={() => setNewBookingAlert(null)}
               className="text-white/60 hover:text-white text-xs px-2 py-1"
             >
-              ✕
+
             </button>
           </div>
         </div>
