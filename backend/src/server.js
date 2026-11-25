@@ -15,6 +15,7 @@ import driverRoutes from './routes/driverRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -74,17 +75,39 @@ app.use('/api/bookings', bookingRoutes);
 app.use('/api/driver', driverRoutes);
 app.use('/api/admin', adminRoutes);
 
-// Serve frontend static build
-app.use(express.static(distPath));
+// Serve frontend static build if dist exists
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath));
+}
+
+// Root endpoint for API status
+app.get('/', (req, res) => {
+  const indexHtml = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
+  }
+  res.json({
+    success: true,
+    message: 'RideShare API Server is online and connected to PostgreSQL.',
+    health: '/api/health',
+  });
+});
 
 // API 404 Handler
 app.use('/api/*', (req, res) => {
   res.status(404).json({ success: false, message: `Endpoint ${req.originalUrl} not found.` });
 });
 
-// SPA Fallback for any client routes
+// Fallback for non-API routes
 app.get('*', (req, res) => {
-  res.sendFile(path.join(distPath, 'index.html'));
+  const indexHtml = path.join(distPath, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
+  }
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found on this API backend.`,
+  });
 });
 
 // Global Error Handler
