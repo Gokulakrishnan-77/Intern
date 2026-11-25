@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { DriverVerification, User, Vehicle, SafetyReport, Ride } from '../models/index.js';
+import { notifyDriverApproved, notifyDriverRejected } from '../services/notificationService.js';
 
 export const getPendingDrivers = async (req, res) => {
   try {
@@ -106,6 +107,9 @@ export const approveDriver = async (req, res) => {
       await vehicle.save();
     }
 
+    // ── NOTIFY DRIVER about approval ─────────────────────────────────────────
+    await notifyDriverApproved(verification.userId, verification.driverName);
+
     return res.json({
       success: true,
       message: `Driver ${verification.driverName} (${(verification.vehicleType || 'vehicle').toUpperCase()}) approved by Administrator Krish.`,
@@ -157,6 +161,9 @@ export const rejectDriver = async (req, res) => {
     await verification.save();
 
     await User.update({ verificationStatus: 'rejected' }, { where: { id: verification.userId } });
+
+    // ── NOTIFY DRIVER about rejection ────────────────────────────────────────
+    await notifyDriverRejected(verification.userId, verification.driverName);
 
     return res.json({
       success: true,

@@ -1,4 +1,5 @@
 import { Booking, Ride, User, Vehicle } from '../models/index.js';
+import { notifyDriverBookingReceived } from '../services/notificationService.js';
 
 export const createBooking = async (req, res) => {
   try {
@@ -38,13 +39,26 @@ export const createBooking = async (req, res) => {
       status: 'Confirmed',
     });
 
-    // Decrement available seats in SQL
+    // Decrement available seats
     ride.availableSeats = Math.max(0, (ride.availableSeats || 1) - seatsRequested);
     await ride.save();
 
+    // ── NOTIFY DRIVER about new booking ──────────────────────────────────────
+    if (ride.driverId) {
+      await notifyDriverBookingReceived({
+        driverId: ride.driverId,
+        bookingId: booking.id,
+        riderName: req.user.name || 'A rider',
+        rideOrigin: ride.originAddress || '',
+        rideDest: ride.destAddress || '',
+        seatsBooked: seatsRequested,
+        departureTime: ride.departureTime || '',
+      });
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'Seat successfully reserved in SQL database.',
+      message: 'Seat successfully reserved.',
       remainingSeats: ride.availableSeats,
       booking: {
         id: booking.id,
@@ -64,8 +78,8 @@ export const createBooking = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error('Booking error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to create booking in SQL database.' });
+    console.error('[createBooking Error]:', error);
+    return res.status(500).json({ success: false, message: 'Failed to create booking.' });
   }
 };
 
@@ -110,7 +124,7 @@ export const getDriverBookings = async (req, res) => {
 
     return res.json({ success: true, count: formatted.length, bookings: formatted });
   } catch (error) {
-    console.error('Fetch driver bookings error:', error);
+    console.error('[getDriverBookings Error]:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch driver bookings.' });
   }
 };
@@ -154,7 +168,7 @@ export const getMyBookings = async (req, res) => {
 
     return res.json({ success: true, count: formatted.length, bookings: formatted });
   } catch (error) {
-    console.error('Fetch bookings error:', error);
+    console.error('[getMyBookings Error]:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch bookings.' });
   }
 };

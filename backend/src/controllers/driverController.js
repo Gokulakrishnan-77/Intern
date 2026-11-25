@@ -19,7 +19,24 @@ export const submitVerification = async (req, res) => {
       });
     }
 
-    // 1. Create or update the pending verification record in SQL
+    // ── DUPLICATE REQUEST GUARD ──────────────────────────────────────────────
+    // Check if driver already has a pending verification request
+    const existingPending = await DriverVerification.findOne({
+      where: { userId, status: 'pending' },
+      order: [['createdAt', 'DESC']],
+    });
+
+    if (existingPending) {
+      return res.status(409).json({
+        success: false,
+        message: 'Your approval request is already pending. Please wait for the admin to review it.',
+        alreadyPending: true,
+        submittedAt: existingPending.createdAt,
+      });
+    }
+
+    // Allow resubmission only if previously rejected (or never submitted)
+    // ── CREATE VERIFICATION RECORD ───────────────────────────────────────────
     const verification = await DriverVerification.create({
       userId,
       driverName: req.user.name,
@@ -40,7 +57,7 @@ export const submitVerification = async (req, res) => {
       status: 'pending',
     });
 
-    // 2. Create or update Vehicle record in SQL
+    // Create or update Vehicle record
     let existingVehicle = await Vehicle.findOne({ where: { userId } });
     if (existingVehicle) {
       await existingVehicle.update({
@@ -69,17 +86,17 @@ export const submitVerification = async (req, res) => {
       });
     }
 
-    // 3. Mark user status as pending in SQL
+    // Mark user verification status as pending
     await User.update({ verificationStatus: 'pending' }, { where: { id: userId } });
 
     return res.status(201).json({
       success: true,
-      message: `Documents submitted for your ${vehicle.type?.toUpperCase()}! Sits in Administrator Krish's manual approval queue.`,
+      message: 'Your approval request has been submitted successfully. Please wait for admin review.',
       verification,
     });
   } catch (error) {
-    console.error('Submit verification error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to submit verification in SQL database.' });
+    console.error('[submitVerification Error]:', error);
+    return res.status(500).json({ success: false, message: 'Failed to submit verification.' });
   }
 };
 
@@ -95,11 +112,15 @@ export const getVerificationStatus = async (req, res) => {
       order: [['createdAt', 'DESC']],
     });
 
+    // Check if driver has an active pending request
+    const hasPendingRequest = pendingApplication?.status === 'pending';
+
     return res.json({
       success: true,
       verificationStatus: user.verificationStatus,
       vehicle: user.vehicle,
       application: pendingApplication,
+      hasPendingRequest,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to retrieve verification status.' });

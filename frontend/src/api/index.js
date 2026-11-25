@@ -123,10 +123,34 @@ export const adminApi = {
   },
 };
 
+// ================= NOTIFICATIONS API =================
+export const notificationsApi = {
+  getAll: async () => {
+    const res = await api.get('/notifications');
+    return res.data;
+  },
+
+  markAsRead: async (id) => {
+    const res = await api.put(`/notifications/${id}/read`);
+    return res.data;
+  },
+
+  markAllAsRead: async () => {
+    const res = await api.put('/notifications/read-all');
+    return res.data;
+  },
+
+  delete: async (id) => {
+    const res = await api.delete(`/notifications/${id}`);
+    return res.data;
+  },
+};
+
 export default {
   auth: authApi,
   rides: ridesApi,
   bookings: bookingsApi,
   driver: driverApi,
   admin: adminApi,
+  notifications: notificationsApi,
 };

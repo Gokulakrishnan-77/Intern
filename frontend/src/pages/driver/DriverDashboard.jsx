@@ -40,6 +40,7 @@ import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete
 import { calculateFairCost, calculateCO2SavedKg } from '../../services/osrm';
 import { reverseGeocode } from '../../services/nominatim';
 import { driverApi, bookingsApi } from '../../api';
+import { NotificationBell } from '../../components/common/NotificationBell';
 
 export const DriverDashboard = ({
   currentUser,
@@ -140,6 +141,9 @@ export const DriverDashboard = ({
       return null;
     }
   });
+  // Track whether a pending request already exists (prevents duplicate submissions)
+  const [hasPendingRequest, setHasPendingRequest] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // New Ride Posting State (Using Google Maps)
   const [origin, setOrigin] = useState({
@@ -496,6 +500,13 @@ export const DriverDashboard = ({
 
   const handleSubmitVerification = async (e) => {
     e.preventDefault();
+
+    // ── DUPLICATE GUARD ─────────────────────────────────────────────────────
+    if (hasPendingRequest || status === 'pending') {
+      setSubmissionNotice('⏳ Your approval request is already pending. Please wait for the admin to review it.');
+      return;
+    }
+
     if (!verificationForm.vehicleType) {
       alert('Please select your vehicle type (Car, Motorcycle / Bike, or Scooty).');
       return;
@@ -512,6 +523,8 @@ export const DriverDashboard = ({
       alert('Please upload your Driving License proof document (Photo/PDF).');
       return;
     }
+
+    setSubmitting(true);
 
     const applicationData = {
       driverName: currentUser?.name || '',
@@ -569,8 +582,23 @@ export const DriverDashboard = ({
       const res = await driverApi.submitVerification(applicationData);
       if (res.success) {
         savedToBackend = true;
+      } else if (res.alreadyPending) {
+        // Backend confirmed duplicate — block and show message
+        setHasPendingRequest(true);
+        setStatus('pending');
+        setSubmissionNotice('⏳ Your approval request is already pending. Please wait for the admin to review it.');
+        setSubmitting(false);
+        return;
       }
     } catch (err) {
+      // Handle 409 Conflict — already pending
+      if (err?.response?.status === 409 && err?.response?.data?.alreadyPending) {
+        setHasPendingRequest(true);
+        setStatus('pending');
+        setSubmissionNotice('⏳ Your approval request is already pending. Please wait for the admin to review it.');
+        setSubmitting(false);
+        return;
+      }
       console.warn('Direct API submit failed, using local sync fallback:', err);
     }
 
@@ -579,6 +607,7 @@ export const DriverDashboard = ({
     }
 
     setStatus('pending');
+    setHasPendingRequest(true);
 
     const vehicleCategory =
       verificationForm.vehicleType === 'bike'
@@ -587,13 +616,12 @@ export const DriverDashboard = ({
         ? 'Scooty'
         : 'Car';
 
-    const noticeText = `✅ Verification Application Submitted! Your ${vehicleCategory} (${verificationForm.vehicleMake} ${verificationForm.vehicleModel}), license (${verificationForm.licenseNumber}), and proof document are in Administrator Krish's review queue.`;
+    const noticeText = `✅ Your approval request has been submitted successfully. Your ${vehicleCategory} (${verificationForm.vehicleMake} ${verificationForm.vehicleModel}) is in Administrator Krish's review queue.`;
     setSubmissionNotice(noticeText);
     try {
       localStorage.setItem('rideshare_driver_submission_notice', noticeText);
     } catch (e) {}
 
-    // Explicit submission alert dialog requested by user
     alert(
       `🚗 VERIFICATION SUBMISSION ALERT\n\n` +
       `Vehicle Type: ${vehicleCategory}\n` +
@@ -601,9 +629,10 @@ export const DriverDashboard = ({
       `Plate Number: ${verificationForm.plateNumber}\n` +
       `License Number: ${verificationForm.licenseNumber}\n` +
       `Proof Document: ${verificationForm.licenseDocumentName}\n\n` +
-      `Your details have been successfully submitted to Administrator Krish for manual approval.\n` +
+      `Your approval request has been submitted successfully.\n` +
       `Once approved, ride posting will unlock automatically!`
     );
+    setSubmitting(false);
   };
 
   const handlePublishRide = (e) => {
@@ -743,6 +772,7 @@ export const DriverDashboard = ({
               )}
             </span>
           </div>
+        </div>
         </div>
       </div>
 
@@ -1183,12 +1213,38 @@ export const DriverDashboard = ({
                 </div>
               )}
 
+              {/* Pending notice — no duplicate submission allowed */}
+              {(hasPendingRequest || status === 'pending') && (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-xl flex items-center gap-3 text-xs text-amber-800 font-semibold">
+                  <Clock className="w-4 h-4 shrink-0 text-amber-600" />
+                  Your approval request is already pending. Please wait for the admin to review it.
+                </div>
+              )}
+
               <button
                 type="submit"
-                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 mt-4"
+                disabled={hasPendingRequest || status === 'pending' || status === 'verified' || submitting}
+                className={`w-full py-3 px-4 font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center gap-2 mt-4 ${
+                  hasPendingRequest || status === 'pending' || status === 'verified' || submitting
+                    ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
               >
-                <Check className="w-4 h-4" />
-                Submit Verification Details for Administrator Approval
+                {submitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Submitting...
+                  </>
+                ) : hasPendingRequest || status === 'pending' ? (
+                  <><Clock className="w-4 h-4" /> Request Already Submitted — Awaiting Admin Review</>
+                ) : status === 'verified' ? (
+                  <><CheckCircle className="w-4 h-4" /> Approved — No Resubmission Needed</>
+                ) : (
+                  <><Check className="w-4 h-4" /> Submit Verification Details for Administrator Approval</>
+                )}
               </button>
             </form>
           </div>
