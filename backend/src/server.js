@@ -27,10 +27,28 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Security & Parsing Middlewares
-app.use(helmet());
+app.use(helmet({ crossOriginResourcePolicy: false }));
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      // allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) return callback(null, true);
+
+      const allowed = process.env.CLIENT_URL
+        ? process.env.CLIENT_URL.split(',').map((u) => u.trim().replace(/\/$/, ''))
+        : ['http://localhost:5173'];
+
+      const cleanOrigin = origin.replace(/\/$/, '');
+      if (
+        allowed.includes(cleanOrigin) ||
+        allowed.includes('*') ||
+        cleanOrigin.endsWith('.vercel.app') ||
+        cleanOrigin.includes('localhost')
+      ) {
+        return callback(null, true);
+      }
+      return callback(null, true);
+    },
     credentials: true,
   })
 );
