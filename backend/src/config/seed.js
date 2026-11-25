@@ -12,7 +12,7 @@ export const seedDatabase = async () => {
     const adminEmail = (process.env.ADMIN_EMAIL || 'jacksnow0777@gmail.com').toLowerCase().trim();
     const adminPassword = process.env.ADMIN_PASSWORD || 'Gokul@165';
     const adminName = process.env.ADMIN_NAME || 'Krish';
-    const adminPhone = process.env.ADMIN_PHONE || '+91 98765 43210';
+    const adminPhone = process.env.ADMIN_PHONE || '+91 9361011048';
 
     let admin = await User.findOne({ where: { email: adminEmail } });
 
