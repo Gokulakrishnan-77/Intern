@@ -27,9 +27,10 @@ const createSequelizeInstance = () => {
   };
 
   // 1. Connection via full DATABASE_URL (PostgreSQL, Supabase, Neon, Render)
-  if (process.env.DATABASE_URL) {
+  const dbUrl = (process.env.DATABASE_URL || '').trim();
+  if (dbUrl && (dbUrl.startsWith('postgres://') || dbUrl.startsWith('postgresql://'))) {
     console.log('[Database] Connecting to PostgreSQL via DATABASE_URL connection string...');
-    return new Sequelize(process.env.DATABASE_URL, {
+    return new Sequelize(dbUrl, {
       dialect: 'postgres',
       dialectOptions,
       pool,
