@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
-import { Users, DollarSign, Leaf, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Users, DollarSign, Leaf, ShieldCheck, CheckCircle2, Navigation, Route } from 'lucide-react';
+import { formatFare } from '../../utils/currency';
 
-export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
+export const BookingModal = ({ isOpen, onClose, ride, onConfirm, currency = 'INR', selectedRoute = null }) => {
   const [seatsRequested, setSeatsRequested] = useState(1);
   const [pickupNotes, setPickupNotes] = useState('');
   const [agreedToSafetyRules, setAgreedToSafetyRules] = useState(true);
@@ -16,7 +17,10 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
   const isTwoWheeler = vehicleType === 'bike' || vehicleType === 'scooty';
   const openSeats = Math.max(0, ride.availableSeats ?? ride.seatsAvailable ?? 1);
 
-  const totalCost = (seatsRequested * (ride.pricePerSeat || 0)).toFixed(2);
+  const rawTotalCost = seatsRequested * (ride.pricePerSeat || 0);
+  const totalCost = rawTotalCost.toFixed(2);
+  const formattedTotalCost = formatFare(rawTotalCost, currency);
+  const formattedRatePerSeat = formatFare(ride.pricePerSeat || 0, currency);
   const totalCO2Saved = (seatsRequested * (ride.co2SavedKg || 1.8)).toFixed(1);
 
   const handleBook = async () => {
@@ -30,6 +34,9 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
         seatsRequested,
         pickupNotes,
         totalCost,
+        formattedTotalCost,
+        currency,
+        selectedRoute,
       });
     }
   };
@@ -61,8 +68,14 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Estimated Cost Share:</span>
-              <span className="font-semibold text-emerald-700">${totalCost}</span>
+              <span className="font-semibold text-emerald-700">{formattedTotalCost}</span>
             </div>
+            {selectedRoute && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Selected Path:</span>
+                <span className="font-semibold text-slate-800">{selectedRoute.name} ({selectedRoute.distanceKm} km)</span>
+              </div>
+            )}
             <div className="flex justify-between">
               <span className="text-slate-500">Departure:</span>
               <span className="font-semibold text-slate-800">{new Date(ride.departureTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -84,9 +97,29 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
                 {vehicleType === 'bike' ? '🏍️ Bike' : vehicleType === 'scooty' ? '🛵 Scooty' : '🚗 Car'}
               </span>
             </div>
-            <p className="text-slate-600 line-clamp-1">From: {ride.origin?.address || ride.origin?.label}</p>
-            <p className="text-slate-600 line-clamp-1">To: {ride.destination?.address || ride.destination?.label}</p>
+            <p className="text-slate-600 line-clamp-1">From: {ride.origin?.address || ride.origin?.label || ride.origin}</p>
+            <p className="text-slate-600 line-clamp-1">To: {ride.destination?.address || ride.destination?.label || ride.destination}</p>
           </div>
+
+          {/* Selected Route Badge if chosen by user */}
+          {selectedRoute && (
+            <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs space-y-1">
+              <div className="flex items-center justify-between font-bold text-emerald-900">
+                <span className="flex items-center gap-1.5">
+                  <Route className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Chosen Route: {selectedRoute.name}</span>
+                </span>
+                <span className="text-[11px] font-bold bg-white px-2 py-0.5 rounded border border-emerald-200 text-emerald-800">
+                  {selectedRoute.distanceKm} km • ~{selectedRoute.durationMinutes} mins
+                </span>
+              </div>
+              {selectedRoute.waypoints?.length > 0 && (
+                <p className="text-[11px] text-emerald-700">
+                  Via {selectedRoute.waypoints.length} stop(s): {selectedRoute.waypoints.map((w) => w.displayName?.split(',')[0]).join(' → ')}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Two-Wheeler Safety & Helmet Alert */}
           {isTwoWheeler && (
@@ -157,7 +190,7 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
           <div className="bg-slate-50 rounded-xl p-3.5 border border-slate-100 space-y-2 text-xs">
             <div className="flex justify-between items-center">
               <span className="text-slate-600">Rate per seat (Distance & Fuel split):</span>
-              <span className="font-medium text-slate-800">${ride.pricePerSeat}</span>
+              <span className="font-medium text-slate-800">{formattedRatePerSeat}</span>
             </div>
             <div className="flex justify-between items-center text-emerald-700">
               <span className="flex items-center gap-1 font-medium">
@@ -166,8 +199,8 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
               <span className="font-bold">+{totalCO2Saved} kg CO2</span>
             </div>
             <div className="border-t border-slate-200 pt-2 flex justify-between items-center font-bold text-sm text-slate-900">
-              <span>Total Fair Share:</span>
-              <span className="text-emerald-600 text-base">${totalCost}</span>
+              <span>Total Fair Share ({currency}):</span>
+              <span className="text-emerald-600 text-base">{formattedTotalCost}</span>
             </div>
           </div>
 
@@ -196,7 +229,7 @@ export const BookingModal = ({ isOpen, onClose, ride, onConfirm }) => {
               disabled={!agreedToSafetyRules || seatsRequested <= 0}
               onClick={handleBook}
             >
-              Confirm Request (${totalCost})
+              Confirm Request ({formattedTotalCost})
             </Button>
           </div>
         </div>

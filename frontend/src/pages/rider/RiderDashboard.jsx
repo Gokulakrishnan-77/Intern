@@ -22,17 +22,26 @@ import {
   Loader2,
   ArrowRight,
   Filter,
+  Route,
+  Sparkles,
+  Plus,
+  RotateCcw,
+  Compass,
+  Layers,
 } from 'lucide-react';
 import { GoogleMapView } from '../../components/maps/GoogleMapView';
+import { SmartRouteMapView } from '../../components/maps/SmartRouteMapView';
 import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete';
 import { BookingModal } from '../../components/rides/BookingModal';
 import { reverseGeocode } from '../../services/nominatim';
+import { getSmartRoutes } from '../../services/osrm';
+import { getSavedCurrency, saveCurrency, formatFare, convertFare } from '../../utils/currency';
 import { bookingsApi, reviewsApi } from '../../api';
 import { NotificationBell } from '../../components/common/NotificationBell';
 
 // Helper: Haversine distance in km between two lat/lon coordinates
 const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
-  if (!lat1 || !lon1 || !lat2 || !lon2) return 999;
+  if (lat1 === undefined || lon1 === undefined || lat2 === undefined || lon2 === undefined) return 999;
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
@@ -43,7 +52,7 @@ const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
       Math.sin(dLon / 2) *
       Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  return Number((R * c).toFixed(2));
 };
 
 // STRICT DUAL-MATCHING LOGIC: Matches BOTH Pickup AND Destination
@@ -117,6 +126,14 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
 export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide }) => {
   const [activeTab, setActiveTab] = useState('search'); // 'search' | 'bookings' | 'impact'
 
+  // Currency Selection State (INR - ₹ and USD - $)
+  const [currency, setCurrency] = useState(getSavedCurrency());
+
+  const handleCurrencyChange = (newCurrency) => {
+    setCurrency(newCurrency);
+    saveCurrency(newCurrency);
+  };
+
   // Current Rider Search Inputs
   const [origin, setOrigin] = useState({
     displayName: 'Greenfield Valley, Gate 1',
@@ -133,6 +150,16 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
   const [detourTolerance, setDetourTolerance] = useState(5); // 5km proximity radius
   const [isLocating, setIsLocating] = useState(false);
   const [locationNotice, setLocationNotice] = useState(null);
+
+  // Map Engine: 'smart' (Interactive Multi-Route Road Map with Leaflet) or 'google'
+  const [mapEngine, setMapEngine] = useState('smart');
+
+  // Smart Multi-Route Engine State
+  const [smartRoutes, setSmartRoutes] = useState([]);
+  const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
+  const [isCalculatingRoutes, setIsCalculatingRoutes] = useState(false);
+  const [waypoints, setWaypoints] = useState([]);
+  const [newWaypointText, setNewWaypointText] = useState('');
 
   // Booking Modal State
   const [selectedRideForBooking, setSelectedRideForBooking] = useState(null);
@@ -152,10 +179,83 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
   // Vehicle Category Filter: 'all' | 'car' | 'bike' | 'scooty'
   const [vehicleFilter, setVehicleFilter] = useState('all');
 
-  // STRICT DUAL-MATCHING: Matches BOTH Pickup AND Destination
-  const strictlyMatchedDrivers = publishedRides.filter((ride) =>
-    doesDriverMatchBothPoints(ride, origin, destination, detourTolerance)
-  );
+  // Dynamically calculate Smart Multi-Routes from road network (OSRM)
+  useEffect(() => {
+    let isCancelled = false;
+    const fetchRoutes = async () => {
+      if (!origin?.lat || !destination?.lat) return;
+      setIsCalculatingRoutes(true);
+      try {
+        const result = await getSmartRoutes(origin, destination, waypoints);
+        if (!isCancelled && result?.routes?.length > 0) {
+          setSmartRoutes(result.routes);
+          setSelectedRouteIndex((prev) => (prev < result.routes.length ? prev : result.shortestIndex));
+        }
+      } catch (e) {
+        console.error('Route calculation error:', e);
+      } finally {
+        if (!isCancelled) setIsCalculatingRoutes(false);
+      }
+    };
+
+    fetchRoutes();
+    return () => {
+      isCancelled = true;
+    };
+  }, [origin?.lat, origin?.lon, destination?.lat, destination?.lon, waypoints]);
+
+  // Intermediate Stop (Waypoint) handlers
+  const handleAddWaypoint = () => {
+    if (!newWaypointText.trim()) return;
+    const label = newWaypointText.trim();
+    const ratio = (waypoints.length + 1) / (waypoints.length + 2);
+    const approxLat = origin.lat + (destination.lat - origin.lat) * ratio + (Math.random() * 0.008 - 0.004);
+    const approxLon = origin.lon + (destination.lon - origin.lon) * ratio + (Math.random() * 0.008 - 0.004);
+
+    setWaypoints((prev) => [
+      ...prev,
+      {
+        id: 'wp_' + Date.now(),
+        displayName: label,
+        lat: Number(approxLat.toFixed(4)),
+        lon: Number(approxLon.toFixed(4)),
+      },
+    ]);
+    setNewWaypointText('');
+  };
+
+  const handleRemoveWaypoint = (idx) => {
+    setWaypoints((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleResetToShortest = () => {
+    setWaypoints([]);
+    setSelectedRouteIndex(0);
+  };
+
+  // LOCATION-BASED DRIVER MATCHING & SORTING:
+  // 1. Matches drivers whose published route matches BOTH pickup and destination
+  // 2. Calculates distance between rider's pickup and driver's origin
+  // 3. Sorts drivers with closest proximity first
+  const strictlyMatchedDrivers = publishedRides
+    .filter((ride) => doesDriverMatchBothPoints(ride, origin, destination, detourTolerance))
+    .map((ride) => {
+      const pDist =
+        origin?.lat && ride.origin?.lat
+          ? calculateDistanceKm(origin.lat, origin.lon, ride.origin.lat, ride.origin.lon)
+          : 0;
+      const dDist =
+        destination?.lat && ride.destination?.lat
+          ? calculateDistanceKm(destination.lat, destination.lon, ride.destination.lat, ride.destination.lon)
+          : 0;
+      return {
+        ...ride,
+        pickupProximityKm: pDist,
+        destProximityKm: dDist,
+        totalOffsetKm: Number((pDist + dDist).toFixed(1)),
+      };
+    })
+    .sort((a, b) => a.totalOffsetKm - b.totalOffsetKm);
 
   // Filter by Vehicle Type if rider specified
   const displayedDrivers = strictlyMatchedDrivers.filter((ride) => {
@@ -276,6 +376,7 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
   const handleConfirmBooking = async (bookingData) => {
     const seatsRequested = Number(bookingData.seatsRequested || 1);
     const rideId = selectedRideForBooking?.id || selectedRideForBooking?._id || bookingData.rideId;
+    const chosenRoute = bookingData.selectedRoute || smartRoutes[selectedRouteIndex] || null;
 
     // 1. Submit booking to backend API
     try {
@@ -283,6 +384,8 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
         rideId,
         seatsRequested,
         pickupNotes: bookingData.pickupNotes || '',
+        selectedRoute: chosenRoute,
+        currency,
       });
     } catch (err) {
       console.warn('Backend booking API sync note:', err);
@@ -305,7 +408,9 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
       dropoff: selectedRideForBooking.destination?.address || selectedRideForBooking.destination,
       departureTime: selectedRideForBooking.departureTime,
       seatsBooked: seatsRequested,
-      totalCost: `$${bookingData.totalCost}`,
+      totalCost: bookingData.formattedTotalCost || formatFare(bookingData.totalCost, currency),
+      currency: currency,
+      selectedRoute: chosenRoute,
       status: 'Confirmed',
       liveTrackingToken: 'trip_sec_' + Math.random().toString(36).substring(2, 9),
       bookedAt: new Date().toISOString(),
@@ -321,8 +426,8 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
     alert(
       `🎉 Ride Confirmed!\n\n` +
       `You have reserved ${seatsRequested} seat(s) with driver ${selectedRideForBooking.driver?.name}.\n` +
-      `The driver has been notified via real-time message.\n` +
-      `Remaining vacant seats have been updated for all commuters on this corridor.`
+      `Preferred route (${chosenRoute?.name || 'Road Network'}) and fare in ${currency} saved.\n` +
+      `The driver has been notified via real-time message.`
     );
   };
 
@@ -391,19 +496,48 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
           </p>
         </div>
 
-        {/* Status Pill & Notifications */}
-        <div className="flex items-center gap-3">
+        {/* Status Pill, Currency Switcher & Notifications */}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Currency Selection: INR (₹) and USD ($) */}
+          <div className="flex items-center bg-white/10 backdrop-blur-md rounded-xl p-1 border border-white/20 shadow-inner">
+            <button
+              type="button"
+              onClick={() => handleCurrencyChange('INR')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                currency === 'INR'
+                  ? 'bg-emerald-500 text-white shadow-md'
+                  : 'text-slate-200 hover:text-white'
+              }`}
+              title="Display fares in Indian Rupee (₹)"
+            >
+              <span>₹ INR</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleCurrencyChange('USD')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                currency === 'USD'
+                  ? 'bg-emerald-500 text-white shadow-md'
+                  : 'text-slate-200 hover:text-white'
+              }`}
+              title="Display fares in US Dollar ($)"
+            >
+              <span>$ USD</span>
+            </button>
+          </div>
+
           <NotificationBell currentUser={currentUser} />
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[220px]">
-          <div className="flex items-center justify-between text-slate-200">
-            <span>Filter Criterion:</span>
-            <span className="text-emerald-300 font-bold">Both Points Match</span>
+
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[200px]">
+            <div className="flex items-center justify-between text-slate-200">
+              <span>Filter Criterion:</span>
+              <span className="text-emerald-300 font-bold">Both Points Match</span>
+            </div>
+            <div className="flex items-center justify-between mt-1 text-slate-200">
+              <span>Matching Drivers:</span>
+              <span className="font-bold text-white">{strictlyMatchedDrivers.length} Available</span>
+            </div>
           </div>
-          <div className="flex items-center justify-between mt-1 text-slate-200">
-            <span>Matching Drivers:</span>
-            <span className="font-bold text-white">{strictlyMatchedDrivers.length} Available</span>
-          </div>
-        </div>
         </div>
       </div>
 

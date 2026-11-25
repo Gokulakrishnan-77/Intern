@@ -9,7 +9,7 @@ import { sendBookingAcceptedSms } from '../services/smsService.js';
 // ── CREATE BOOKING (Rider requests seats) ────────────────────────────────────
 export const createBooking = async (req, res) => {
   try {
-    const { rideId, seatsRequested = 1, pickupNotes } = req.body;
+    const { rideId, seatsRequested = 1, pickupNotes, selectedRoute, currency } = req.body;
     const riderId = req.user.id;
 
     const ride = await Ride.findByPk(rideId, {
@@ -40,13 +40,23 @@ export const createBooking = async (req, res) => {
 
     const totalFare = Number((seatsRequested * ride.pricePerSeat).toFixed(2));
 
+    // Construct enriched pickup notes with selected route and currency metadata
+    let enrichedNotes = pickupNotes ? String(pickupNotes).trim() : '';
+    if (selectedRoute) {
+      const routeInfo = `[Preferred Route: ${selectedRoute.name || 'Custom Route'} (${selectedRoute.distanceKm || selectedRoute.distance} km, ~${selectedRoute.durationMinutes || selectedRoute.duration} mins)${selectedRoute.waypoints?.length ? ` via ${selectedRoute.waypoints.length} waypoint(s)` : ''}]`;
+      enrichedNotes = enrichedNotes ? `${routeInfo} Note: ${enrichedNotes}` : routeInfo;
+    }
+    if (currency) {
+      enrichedNotes = `[Currency: ${currency}] ${enrichedNotes}`;
+    }
+
     // Create booking in 'Pending' status — driver must Accept or Reject
     const booking = await Booking.create({
       rideId,
       riderId,
       seatsRequested,
       totalFare,
-      pickupNotes: pickupNotes || '',
+      pickupNotes: enrichedNotes,
       status: 'Pending',
     });
 
