@@ -26,18 +26,19 @@ const createSequelizeInstance = () => {
     idle: parseInt(process.env.DB_POOL_IDLE || '10000', 10),
   };
 
-  // 1. Connection via full DATABASE_URL (PostgreSQL, MySQL, CockroachDB, etc.)
+  // 1. Connection via full DATABASE_URL (PostgreSQL, Supabase, Neon, Render)
   if (process.env.DATABASE_URL) {
-    console.log('[Database] Connecting via DATABASE_URL connection string...');
+    console.log('[Database] Connecting to PostgreSQL via DATABASE_URL connection string...');
     return new Sequelize(process.env.DATABASE_URL, {
+      dialect: 'postgres',
       dialectOptions,
       pool,
       logging,
     });
   }
 
-  // 2. Connection via individual environment variables
-  const dialect = (process.env.DB_DIALECT || 'sqlite').toLowerCase();
+  // 2. Connection via individual environment variables (PostgreSQL default)
+  const dialect = (process.env.DB_DIALECT || 'postgres').toLowerCase();
 
   if (dialect === 'sqlite') {
     const storagePath = process.env.SQLITE_STORAGE || process.env.DB_STORAGE || path.resolve(__dirname, '../../database.sqlite');
@@ -48,18 +49,17 @@ const createSequelizeInstance = () => {
     });
   }
 
-  // PostgreSQL, MySQL, MariaDB, MSSQL
+  // PostgreSQL Connection Parameters
   const host = process.env.DB_HOST || 'localhost';
-  const defaultPort = dialect === 'postgres' ? 5432 : 3306;
-  const port = parseInt(process.env.DB_PORT || String(defaultPort), 10);
-  const database = process.env.DB_NAME || 'rideshare';
-  const username = process.env.DB_USER || (dialect === 'postgres' ? 'postgres' : 'root');
+  const port = parseInt(process.env.DB_PORT || '5432', 10);
+  const database = process.env.DB_NAME || 'ridesharedb';
+  const username = process.env.DB_USER || 'postgres';
   const password = process.env.DB_PASSWORD || process.env.DB_PASS || '';
 
   return new Sequelize(database, username, password, {
     host,
     port,
-    dialect,
+    dialect: 'postgres',
     dialectOptions,
     pool,
     logging,
@@ -70,29 +70,9 @@ export const sequelize = createSequelizeInstance();
 
 export const connectSQL = async () => {
   try {
-    const dialect = sequelize.getDialect().toLowerCase();
-    
-    // Auto-create database in MySQL if it doesn't exist
-    if (dialect === 'mysql' && !process.env.DATABASE_URL) {
-      try {
-        const mysql = await import('mysql2/promise');
-        const host = process.env.DB_HOST || 'localhost';
-        const port = parseInt(process.env.DB_PORT || '3306', 10);
-        const user = process.env.DB_USER || 'root';
-        const password = process.env.DB_PASSWORD || process.env.DB_PASS || '';
-        const database = process.env.DB_NAME || 'Intern_1';
-
-        const tempConn = await mysql.default.createConnection({ host, port, user, password });
-        await tempConn.query(`CREATE DATABASE IF NOT EXISTS \`${database}\`;`);
-        await tempConn.end();
-      } catch (initErr) {
-        // Continue to sequelize authentication
-      }
-    }
-
     await sequelize.authenticate();
     const config = sequelize.config;
-    console.log(`[SQL Database] Connected successfully using dialect: ${sequelize.getDialect().toUpperCase()}`);
+    console.log(`[SQL Database] Connected successfully to POSTGRESQL`);
     if (sequelize.getDialect() === 'sqlite') {
       console.log(`[SQL Storage] SQLite file path: ${config.storage}`);
     } else {

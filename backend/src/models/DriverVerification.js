@@ -38,7 +38,7 @@ export const DriverVerification = sequelize.define(
       defaultValue: 'Driver_License_Proof.pdf',
     },
     licenseDocumentData: {
-      type: DataTypes.TEXT('long'),
+      type: DataTypes.TEXT,
       allowNull: true,
     },
     insuranceNumber: {
