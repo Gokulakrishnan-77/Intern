@@ -27,7 +27,8 @@ import { GoogleMapView } from '../../components/maps/GoogleMapView';
 import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete';
 import { BookingModal } from '../../components/rides/BookingModal';
 import { reverseGeocode } from '../../services/nominatim';
-import { bookingsApi } from '../../api';
+import { bookingsApi, reviewsApi } from '../../api';
+import { NotificationBell } from '../../components/common/NotificationBell';
 
 // Helper: Haversine distance in km between two lat/lon coordinates
 const calculateDistanceKm = (lat1, lon1, lat2, lon2) => {
@@ -348,14 +349,27 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
     setTimeout(() => setCopiedLink(false), 3000);
   };
 
-  const handleRatingSubmit = (e) => {
+  const handleRatingSubmit = async (e) => {
     e.preventDefault();
-    setRatingSubmitted(true);
-    setTimeout(() => {
-      setRatingRide(null);
-      setRatingSubmitted(false);
-      setReviewText('');
-    }, 2000);
+    if (!ratingRide) return;
+    try {
+      await reviewsApi.submitReview({
+        rideId: ratingRide.rideId,
+        bookingId: ratingRide.id,
+        targetUserId: ratingRide.driverId,
+        rating: starCount,
+        comment: reviewText.trim() || 'Great commute! Punctual and safe driver.',
+      });
+      setRatingSubmitted(true);
+      setTimeout(() => {
+        setRatingRide(null);
+        setRatingSubmitted(false);
+        setReviewText('');
+      }, 1500);
+      alert('Review submitted successfully! Thank you for rating your driver.');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to submit review.');
+    }
   };
 
   return (
@@ -377,8 +391,10 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
           </p>
         </div>
 
-        {/* Status Pill */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[220px]">
+        {/* Status Pill & Notifications */}
+        <div className="flex items-center gap-3">
+          <NotificationBell currentUser={currentUser} />
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[220px]">
           <div className="flex items-center justify-between text-slate-200">
             <span>Filter Criterion:</span>
             <span className="text-emerald-300 font-bold">Both Points Match</span>
@@ -387,6 +403,7 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
             <span>Matching Drivers:</span>
             <span className="font-bold text-white">{strictlyMatchedDrivers.length} Available</span>
           </div>
+        </div>
         </div>
       </div>
 
@@ -846,22 +863,46 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-slate-900">{booking.driverName}</span>
-                        <span className="text-xs text-amber-600">★ {booking.driverRating}</span>
+                        <span className="text-xs text-amber-600">★ {booking.driverRating || 4.9}</span>
                         <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
                           <ShieldCheck className="w-3 h-3 text-emerald-600" /> Krish Approved
                         </span>
                       </div>
-                      <p className="text-xs text-slate-500">{booking.driverPhone}</p>
+                      <div className="mt-1">
+                        {booking.canCallDriver && booking.driverPhone && !booking.driverPhone.includes('Protected') ? (
+                          <a
+                            href={`tel:${booking.driverPhone}`}
+                            className="inline-flex items-center gap-1.5 font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors text-xs"
+                          >
+                            <PhoneCall className="w-3 h-3 text-emerald-600" />
+                            <span>Call Driver: {booking.driverPhone}</span>
+                          </a>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">
+                            🔒 Driver phone shared after booking acceptance
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     <span
-                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                        booking.status.includes('Cancelled')
-                          ? 'bg-rose-100 text-rose-800'
-                          : 'bg-emerald-100 text-emerald-800'
+                      className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                        booking.status === 'Accepted' || booking.status === 'Confirmed'
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : booking.status === 'Rejected' || booking.status?.includes('Cancelled')
+                          ? 'bg-rose-100 text-rose-800 border-rose-200'
+                          : booking.status === 'Completed'
+                          ? 'bg-sky-100 text-sky-800 border-sky-300'
+                          : 'bg-amber-100 text-amber-800 border-amber-300'
                       }`}
                     >
-                      {booking.status}
+                      {booking.status === 'Accepted' || booking.status === 'Confirmed'
+                        ? '✅ Confirmed (SMS Sent)'
+                        : booking.status === 'Rejected'
+                        ? '❌ Declined by Driver'
+                        : booking.status === 'Completed'
+                        ? '🏁 Completed'
+                        : '⏳ Pending Driver Acceptance'}
                     </span>
                   </div>
 

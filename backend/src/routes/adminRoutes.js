@@ -8,6 +8,7 @@ import {
   getSafetyReports,
   createSafetyReport,
   resolveSafetyReport,
+  updateComplaintStatus,
 } from '../controllers/adminController.js';
 import { authenticate, requireAdmin } from '../middleware/auth.js';
 
@@ -24,5 +25,6 @@ router.get('/users', authenticate, requireAdmin, getAllUsers);
 router.put('/users/:id/toggle-status', authenticate, requireAdmin, toggleSuspendUser);
 router.get('/reports', authenticate, requireAdmin, getSafetyReports);
 router.put('/reports/:id/resolve', authenticate, requireAdmin, resolveSafetyReport);
+router.put('/reports/:id/status', authenticate, requireAdmin, updateComplaintStatus);
 
 export default router;

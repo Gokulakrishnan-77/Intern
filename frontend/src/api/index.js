@@ -47,6 +47,11 @@ export const ridesApi = {
     const res = await api.get('/rides/my-rides');
     return res.data;
   },
+
+  completeRide: async (id) => {
+    const res = await api.put(`/rides/${id}/complete`);
+    return res.data;
+  },
 };
 
 // ================= BOOKINGS API =================
@@ -63,6 +68,49 @@ export const bookingsApi = {
 
   getDriverBookings: async () => {
     const res = await api.get('/bookings/driver-bookings');
+    return res.data;
+  },
+
+  acceptBooking: async (id) => {
+    const res = await api.put(`/bookings/${id}/accept`);
+    return res.data;
+  },
+
+  rejectBooking: async (id) => {
+    const res = await api.put(`/bookings/${id}/reject`);
+    return res.data;
+  },
+
+  cancelBooking: async (id) => {
+    const res = await api.put(`/bookings/${id}/cancel`);
+    return res.data;
+  },
+};
+
+// ================= REVIEWS & FEEDBACK API =================
+export const reviewsApi = {
+  submitReview: async (reviewData) => {
+    const res = await api.post('/reviews', reviewData);
+    return res.data;
+  },
+
+  getRideReviews: async (rideId) => {
+    const res = await api.get(`/reviews/ride/${rideId}`);
+    return res.data;
+  },
+
+  reportReview: async (id, reason) => {
+    const res = await api.post(`/reviews/${id}/report`, { reason });
+    return res.data;
+  },
+
+  getAllReviewsAdmin: async (filter = 'all', search = '') => {
+    const res = await api.get('/reviews/admin', { params: { filter, search } });
+    return res.data;
+  },
+
+  removeReviewAdmin: async (id, reason) => {
+    const res = await api.put(`/reviews/admin/${id}/remove`, { reason });
     return res.data;
   },
 };
@@ -121,6 +169,11 @@ export const adminApi = {
     const res = await api.put(`/admin/reports/${reportId}/resolve`);
     return res.data;
   },
+
+  updateComplaintStatus: async (id, status, adminNotes = '') => {
+    const res = await api.put(`/admin/reports/${id}/status`, { status, adminNotes });
+    return res.data;
+  },
 };
 
 // ================= NOTIFICATIONS API =================
@@ -153,4 +206,5 @@ export default {
   driver: driverApi,
   admin: adminApi,
   notifications: notificationsApi,
+  reviews: reviewsApi,
 };

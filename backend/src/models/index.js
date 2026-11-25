@@ -6,6 +6,8 @@ import Booking from './Booking.js';
 import DriverVerification from './DriverVerification.js';
 import SafetyReport from './SafetyReport.js';
 import Notification from './Notification.js';
+import Review from './Review.js';
+import SmsLog from './SmsLog.js';
 
 // User <-> Vehicle (1:1)
 User.hasOne(Vehicle, { foreignKey: 'userId', as: 'vehicle', onDelete: 'CASCADE' });
@@ -31,6 +33,14 @@ DriverVerification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications', onDelete: 'CASCADE' });
 Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+// Ride <-> Review (1:N)
+Ride.hasMany(Review, { foreignKey: 'rideId', as: 'reviews', onDelete: 'CASCADE' });
+Review.belongsTo(Ride, { foreignKey: 'rideId', as: 'ride' });
+
+// Booking <-> SmsLog (1:N)
+Booking.hasMany(SmsLog, { foreignKey: 'bookingId', as: 'smsLogs', onDelete: 'CASCADE' });
+SmsLog.belongsTo(Booking, { foreignKey: 'bookingId', as: 'booking' });
+
 export {
   sequelize,
   User,
@@ -40,6 +50,8 @@ export {
   DriverVerification,
   SafetyReport,
   Notification,
+  Review,
+  SmsLog,
 };
 
 export default {
@@ -51,4 +63,6 @@ export default {
   DriverVerification,
   SafetyReport,
   Notification,
+  Review,
+  SmsLog,
 };

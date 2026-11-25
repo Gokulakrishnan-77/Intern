@@ -1,6 +1,6 @@
 import { Op } from 'sequelize';
 import { DriverVerification, User, Vehicle, SafetyReport, Ride } from '../models/index.js';
-import { notifyDriverApproved, notifyDriverRejected } from '../services/notificationService.js';
+import { notifyDriverApproved, notifyDriverRejected, notifyComplaintUpdated } from '../services/notificationService.js';
 
 export const getPendingDrivers = async (req, res) => {
   try {
@@ -230,21 +230,56 @@ export const createSafetyReport = async (req, res) => {
     const { driverName, rideId, issueType, details } = req.body;
     const report = await SafetyReport.create({
       reporterId: req.user?.id,
-      reporterName: req.user?.name || 'Anonymous Rider',
-      driverName: driverName || 'Unknown Driver',
+      reporterName: req.user?.name || 'Anonymous User',
+      driverName: driverName || 'Reported Party',
       rideId: rideId || '',
-      issueType: issueType || 'Vehicle Mismatch',
-      details: details || 'Rider reported vehicle mismatch or security incident.',
-      status: 'Open',
+      issueType: issueType || 'General Issue',
+      details: details || 'User reported an incident.',
+      status: 'Pending',
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Incident reported directly to Administrator Krish.',
+      message: 'Complaint submitted successfully to Administrator Krish for investigation.',
       report,
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to submit report.' });
+  }
+};
+
+export const updateComplaintStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNotes } = req.body; // 'Pending', 'Under Review', 'Resolved', 'Rejected'
+
+    const report = await SafetyReport.findByPk(id);
+    if (!report) {
+      return res.status(404).json({ success: false, message: 'Complaint report not found.' });
+    }
+
+    report.status = status || 'Resolved';
+    report.adminNotes = adminNotes || report.adminNotes;
+    report.moderatedBy = req.user?.name || 'Administrator Krish';
+    report.moderatedAt = new Date();
+    await report.save();
+
+    // Notify the user who reported this complaint
+    if (report.reporterId) {
+      await notifyComplaintUpdated({
+        userId: report.reporterId,
+        complaintId: report.id,
+        newStatus: report.status,
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Complaint #${id.slice(0, 8)} status updated to "${report.status}".`,
+      report,
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to update complaint status.' });
   }
 };
 
@@ -256,7 +291,18 @@ export const resolveSafetyReport = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Report not found.' });
     }
     report.status = 'Resolved';
+    report.moderatedBy = req.user?.name || 'Administrator Krish';
+    report.moderatedAt = new Date();
     await report.save();
+
+    if (report.reporterId) {
+      await notifyComplaintUpdated({
+        userId: report.reporterId,
+        complaintId: report.id,
+        newStatus: 'Resolved',
+      });
+    }
+
     return res.json({ success: true, message: `Report #${id} marked as resolved.` });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Failed to resolve report.' });

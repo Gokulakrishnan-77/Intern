@@ -39,7 +39,7 @@ import { GoogleMapView } from '../../components/maps/GoogleMapView';
 import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete';
 import { calculateFairCost, calculateCO2SavedKg } from '../../services/osrm';
 import { reverseGeocode } from '../../services/nominatim';
-import { driverApi, bookingsApi } from '../../api';
+import { driverApi, bookingsApi, ridesApi } from '../../api';
 import { NotificationBell } from '../../components/common/NotificationBell';
 
 export const DriverDashboard = ({
@@ -183,7 +183,88 @@ export const DriverDashboard = ({
   });
   const [newBookingAlert, setNewBookingAlert] = useState(null);
 
-  // Sync rider notifications from backend & localStorage
+  // Fetch driver rides from backend
+  const fetchMyRides = async () => {
+    try {
+      const res = await ridesApi.getMyRides();
+      if (res?.success && res.rides) {
+        setMyRides((prev) => {
+          const merged = [...res.rides];
+          prev.forEach((p) => {
+            if (!merged.some((m) => m.id === p.id)) merged.push(p);
+          });
+          return merged;
+        });
+      }
+    } catch (_) {}
+  };
+
+  useEffect(() => {
+    fetchMyRides();
+  }, []);
+
+  // Handle Driver Accept Booking -> Sends SMS automatically & unlocks contact
+  const handleAcceptBooking = async (bookingId) => {
+    try {
+      const res = await bookingsApi.acceptBooking(bookingId);
+      if (res.success) {
+        setRiderMessages((prev) =>
+          prev.map((b) =>
+            b.id === bookingId
+              ? {
+                  ...b,
+                  status: 'Accepted',
+                  canCallRider: true,
+                  riderPhone: res.booking?.riderPhone || b.riderPhone,
+                }
+              : b
+          )
+        );
+        fetchRiderMessages();
+        fetchMyRides();
+        alert(
+          `✅ BOOKING ACCEPTED!\n\n` +
+          `An automated SMS notification has been sent to the rider.\n` +
+          `Driver and Rider phone numbers are now shared. You can call the rider directly.`
+        );
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to accept booking.');
+    }
+  };
+
+  // Handle Driver Reject Booking
+  const handleRejectBooking = async (bookingId) => {
+    if (!window.confirm('Are you sure you want to decline this booking request?')) return;
+    try {
+      const res = await bookingsApi.rejectBooking(bookingId);
+      if (res.success) {
+        setRiderMessages((prev) =>
+          prev.map((b) => (b.id === bookingId ? { ...b, status: 'Rejected' } : b))
+        );
+        fetchRiderMessages();
+        alert('Booking request declined. Rider has been notified.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to reject booking.');
+    }
+  };
+
+  // Handle Complete Ride -> Moves to history and unlocks rider reviews
+  const handleCompleteRide = async (rideId) => {
+    if (!window.confirm('Mark this journey as completed? This will move it to history.')) return;
+    try {
+      const res = await ridesApi.completeRide(rideId);
+      if (res.success) {
+        setMyRides((prev) =>
+          prev.map((r) => (r.id === rideId ? { ...r, status: 'completed' } : r))
+        );
+        alert('🎉 Journey marked as completed! Confirmed riders can now leave reviews.');
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to complete ride.');
+    }
+  };
   const fetchRiderMessages = async () => {
     try {
       const res = await bookingsApi.getDriverBookings().catch(() => null);
@@ -726,8 +807,10 @@ export const DriverDashboard = ({
           </p>
         </div>
 
-        {/* Verification Status Pill */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/15 text-xs text-left min-w-[240px]">
+        {/* Verification Status Pill & Notification Bell */}
+        <div className="flex items-center gap-3">
+          <NotificationBell currentUser={currentUser} />
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/15 text-xs text-left min-w-[240px]">
           <div className="flex items-center justify-between text-slate-200">
             <span>Vehicle Type:</span>
             <span className="font-bold text-emerald-300 capitalize">
@@ -773,6 +856,7 @@ export const DriverDashboard = ({
             </span>
           </div>
         </div>
+        </div>
       </div>
 
       {submissionNotice && (
@@ -815,9 +899,10 @@ export const DriverDashboard = ({
             </button>
             <button
               onClick={() => setNewBookingAlert(null)}
-              className="text-white/60 hover:text-white text-xs px-2 py-1"
+              className="text-white/60 hover:text-white text-xs px-2 py-1 rounded"
+              title="Dismiss"
             >
-
+              ✕
             </button>
           </div>
         </div>
@@ -1920,9 +2005,28 @@ export const DriverDashboard = ({
                     <p className="text-slate-500 pt-1"><strong>Schedule:</strong> {ride.departureTime}</p>
                   </div>
 
-                  <div className="flex items-center justify-between text-xs text-slate-500">
-                    <span>Available Seats: <strong className="text-slate-900">{ride.availableSeats} open</strong></span>
-                    <span className="text-emerald-700 font-bold">Active on Google Maps</span>
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
+                    <div>
+                      <span>Seats: <strong className="text-slate-900">{ride.availableSeats} of {ride.totalSeats || ride.availableSeats} open</strong></span>
+                      <span className={`ml-2 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                        ride.status === 'completed'
+                          ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                          : ride.status === 'fully_booked'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                      }`}>
+                        {ride.status === 'fully_booked' ? 'Fully Booked' : ride.status === 'completed' ? 'Completed (In History)' : 'Active / Published'}
+                      </span>
+                    </div>
+                    {ride.status !== 'completed' && (
+                      <button
+                        type="button"
+                        onClick={() => handleCompleteRide(ride.id)}
+                        className="py-1 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-colors shadow-xs"
+                      >
+                        Complete Journey
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1977,8 +2081,18 @@ export const DriverDashboard = ({
                       <div>
                         <div className="flex items-center gap-2">
                           <h4 className="font-bold text-sm text-slate-900">{item.riderName}</h4>
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            Confirmed Booking
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            item.status === 'Accepted' || item.status === 'Confirmed'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : item.status === 'Rejected'
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}>
+                            {item.status === 'Accepted' || item.status === 'Confirmed'
+                              ? 'Confirmed (SMS Sent)'
+                              : item.status === 'Rejected'
+                              ? 'Declined'
+                              : 'Pending Your Approval'}
                           </span>
                         </div>
                         <span className="text-xs text-slate-500">
@@ -2019,36 +2133,65 @@ export const DriverDashboard = ({
                     )}
                   </div>
 
-                  <div className="flex items-center justify-between pt-1 text-xs">
-                    <div className="flex items-center gap-3 text-slate-600">
-                      {item.riderPhone && (
-                        <span className="flex items-center gap-1 font-medium">
-                          <Phone className="w-3.5 h-3.5 text-slate-400" />
-                          {item.riderPhone}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2 text-xs border-t border-slate-100">
+                    <div className="flex flex-wrap items-center gap-3 text-slate-600">
+                      {item.canCallRider && item.riderPhone && item.riderPhone !== 'Protected until accepted' ? (
+                        <a
+                          href={`tel:${item.riderPhone}`}
+                          className="flex items-center gap-1.5 font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-colors"
+                        >
+                          <Phone className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Call: {item.riderPhone}</span>
+                        </a>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-slate-400 italic">
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Phone protected until booking accepted</span>
                         </span>
                       )}
                       {item.riderEmail && (
-                        <span className="flex items-center gap-1 font-medium">
+                        <span className="flex items-center gap-1 text-slate-500">
                           <Mail className="w-3.5 h-3.5 text-slate-400" />
                           {item.riderEmail}
                         </span>
                       )}
                     </div>
+
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => alert(`Connecting with ${item.riderName}... Call or SMS at: ${item.riderPhone || 'In-app chat'}`)}
-                        className="py-1.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg border border-emerald-200 transition-colors flex items-center gap-1"
-                      >
-                        <Phone className="w-3.5 h-3.5" /> Call Rider
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => alert(`Pickup confirmed for ${item.riderName}!`)}
-                        className="py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1"
-                      >
-                        <CheckCheck className="w-3.5 h-3.5" /> Confirm Pickup
-                      </button>
+                      {item.status === 'Pending' ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleAcceptBooking(item.id)}
+                            className="py-1.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1.5 text-xs"
+                          >
+                            <CheckCircle className="w-4 h-4" /> Accept & Send SMS
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRejectBooking(item.id)}
+                            className="py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg border border-rose-200 transition-colors flex items-center gap-1 text-xs"
+                          >
+                            <XCircle className="w-4 h-4" /> Decline
+                          </button>
+                        </>
+                      ) : item.status === 'Accepted' || item.status === 'Confirmed' ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
+                            <CheckCheck className="w-3.5 h-3.5" /> SMS Delivered
+                          </span>
+                          {item.riderPhone && (
+                            <a
+                              href={`tel:${item.riderPhone}`}
+                              className="py-1.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1 text-xs"
+                            >
+                              <Phone className="w-3.5 h-3.5" /> Call Rider
+                            </a>
+                          )}
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-400 font-medium">Request Closed</span>
+                      )}
                     </div>
                   </div>
                 </div>

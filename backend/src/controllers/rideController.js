@@ -1,4 +1,6 @@
-import { Ride, User, Vehicle } from '../models/index.js';
+import { Op } from 'sequelize';
+import { Ride, User, Vehicle, Booking } from '../models/index.js';
+import { createNotification } from '../services/notificationService.js';
 
 // Haversine formula for server-side proximity check
 const haversineKm = (lat1, lon1, lat2, lon2) => {
@@ -16,17 +18,23 @@ const haversineKm = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+// ── GET RIDES (Rider Search) ─────────────────────────────────────────────────
+// Only returns rides with status published/scheduled AND availableSeats > 0
 export const getRides = async (req, res) => {
   try {
     const { originLat, originLon, destLat, destLon, vehicleType, toleranceKm = 5 } = req.query;
 
     const allRides = await Ride.findAll({
-      where: { status: 'scheduled' },
+      where: {
+        status: { [Op.in]: ['published', 'scheduled'] },
+        availableSeats: { [Op.gt]: 0 },
+      },
       include: [
         {
           model: User,
           as: 'driver',
-          attributes: ['id', 'name', 'phone', 'rating', 'reliabilityScore', 'verificationStatus'],
+          attributes: ['id', 'name', 'rating', 'reliabilityScore', 'verificationStatus'],
+          // NOTE: Phone is deliberately EXCLUDED from public search
           include: [{ model: Vehicle, as: 'vehicle' }],
         },
       ],
@@ -51,10 +59,12 @@ export const getRides = async (req, res) => {
         co2SavedKg: r.co2SavedKg,
         isRecurring: r.isRecurring,
         recurringDays: JSON.parse(r.recurringDays || '[]'),
+        status: r.status,
         driver: {
           id: r.driver?.id,
           name: r.driver?.name,
-          phone: r.driver?.phone,
+          // SECURE: Driver phone protected until booking confirmed
+          phone: 'Available after booking confirmation',
           rating: r.driver?.rating || 4.9,
           reliabilityScore: r.driver?.reliabilityScore || 98,
           verificationStatus: r.driver?.verificationStatus,
@@ -71,10 +81,10 @@ export const getRides = async (req, res) => {
       };
     });
 
-    // Only return rides whose driver is verified by Admin Krish
+    // Only return rides whose driver is verified
     formattedRides = formattedRides.filter((r) => r.driver.verificationStatus === 'verified');
 
-    // Optional server-side dual point filtering if coordinates are passed
+    // Proximity search
     if (originLat && originLon && destLat && destLon) {
       formattedRides = formattedRides.filter((ride) => {
         const origDist = haversineKm(Number(originLat), Number(originLon), ride.origin.lat, ride.origin.lon);
@@ -83,7 +93,6 @@ export const getRides = async (req, res) => {
       });
     }
 
-    // Optional vehicle type filter
     if (vehicleType && vehicleType !== 'all') {
       formattedRides = formattedRides.filter((ride) => ride.driver?.vehicle?.type === vehicleType);
     }
@@ -95,6 +104,7 @@ export const getRides = async (req, res) => {
   }
 };
 
+// ── CREATE RIDE (Driver publishes new ride) ──────────────────────────────────
 export const createRide = async (req, res) => {
   try {
     const {
@@ -137,28 +147,93 @@ export const createRide = async (req, res) => {
       distanceKm: distanceKm || 14.8,
       isRecurring: !!isRecurring,
       recurringDays: JSON.stringify(recurringDays || []),
-      status: 'scheduled',
+      status: 'published',
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Commute successfully published on Google Maps.',
+      message: 'Commute successfully published. Available to riders.',
       ride: newRide,
     });
   } catch (error) {
     console.error('Publish ride error:', error);
-    return res.status(500).json({ success: false, message: 'Failed to publish ride in SQL database.' });
+    return res.status(500).json({ success: false, message: 'Failed to publish ride.' });
   }
 };
 
+// ── COMPLETE RIDE (Driver marks ride as completed) ───────────────────────────
+export const completeRide = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const driverId = req.user.id;
+
+    const ride = await Ride.findByPk(id, {
+      include: [
+        {
+          model: Booking,
+          as: 'bookings',
+          where: { status: ['Accepted', 'Confirmed'] },
+          required: false,
+        },
+      ],
+    });
+
+    if (!ride) {
+      return res.status(404).json({ success: false, message: 'Ride not found.' });
+    }
+
+    if (ride.driverId !== driverId && req.user.role !== 'admin') {
+      return res.status(403).json({ success: false, message: 'Not authorized to complete this ride.' });
+    }
+
+    ride.status = 'completed';
+    await ride.save();
+
+    // Mark confirmed bookings as Completed
+    if (ride.bookings && ride.bookings.length > 0) {
+      for (const b of ride.bookings) {
+        b.status = 'Completed';
+        await b.save();
+
+        // Notify rider to review
+        await createNotification({
+          userId: b.riderId,
+          type: 'ride_completed',
+          title: '🏁 Journey Completed!',
+          message: `Your ride from ${ride.originAddress?.split(',')[0]} to ${ride.destAddress?.split(',')[0]} is completed. Please share your rating and review!`,
+          eventKey: `completed_ride_${ride.id}_${b.id}`,
+          metadata: { rideId: ride.id, bookingId: b.id },
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: 'Ride successfully completed and moved to Ride History.',
+      ride,
+    });
+  } catch (error) {
+    console.error('[completeRide Error]:', error);
+    return res.status(500).json({ success: false, message: 'Failed to complete ride.' });
+  }
+};
+
+// ── GET MY RIDES (Driver ride list & history) ─────────────────────────────────
 export const getMyRides = async (req, res) => {
   try {
     const rides = await Ride.findAll({
       where: { driverId: req.user.id },
+      include: [
+        {
+          model: Booking,
+          as: 'bookings',
+          include: [{ model: User, as: 'rider', attributes: ['id', 'name', 'phone'] }],
+        },
+      ],
       order: [['createdAt', 'DESC']],
     });
     return res.json({ success: true, count: rides.length, rides });
   } catch (error) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch your published rides.' });
+    return res.status(500).json({ success: false, message: 'Failed to fetch rides.' });
   }
 };

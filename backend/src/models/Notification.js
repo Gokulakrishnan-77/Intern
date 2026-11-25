@@ -15,12 +15,7 @@ const Notification = sequelize.define(
       comment: 'The user who receives this notification',
     },
     type: {
-      type: DataTypes.ENUM(
-        'approval_approved',
-        'approval_rejected',
-        'booking_received',
-        'approval_pending'
-      ),
+      type: DataTypes.STRING,
       allowNull: false,
     },
     title: {

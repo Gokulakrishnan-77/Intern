@@ -81,8 +81,8 @@ export const Ride = sequelize.define(
       defaultValue: '[]',
     },
     status: {
-      type: DataTypes.ENUM('scheduled', 'in_progress', 'completed', 'cancelled'),
-      defaultValue: 'scheduled',
+      type: DataTypes.STRING, // 'draft', 'published', 'scheduled', 'fully_booked', 'in_progress', 'completed', 'cancelled'
+      defaultValue: 'published',
     },
   },
   {

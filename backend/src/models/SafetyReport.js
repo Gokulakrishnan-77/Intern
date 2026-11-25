@@ -35,8 +35,20 @@ export const SafetyReport = sequelize.define(
       allowNull: false,
     },
     status: {
-      type: DataTypes.ENUM('Open', 'Investigating', 'Resolved'),
-      defaultValue: 'Open',
+      type: DataTypes.STRING, // 'Pending', 'Under Review', 'Resolved', 'Rejected'
+      defaultValue: 'Pending',
+    },
+    adminNotes: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    moderatedBy: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    moderatedAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
     },
   },
   {

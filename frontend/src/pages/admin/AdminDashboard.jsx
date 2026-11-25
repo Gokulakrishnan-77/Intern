@@ -20,8 +20,12 @@ import {
   X,
   ExternalLink,
   Award,
+  Star,
+  MessageSquare,
+  Trash2,
 } from 'lucide-react';
-import { adminApi } from '../../api';
+import { adminApi, reviewsApi } from '../../api';
+import { NotificationBell } from '../../components/common/NotificationBell';
 
 export const AdminDashboard = ({
   currentUser,
@@ -40,13 +44,30 @@ export const AdminDashboard = ({
   // Platform Users Directory from SQL Database
   const [usersList, setUsersList] = useState([]);
 
+  // Reviews & Feedback Moderation State
+  const [reviewsList, setReviewsList] = useState([]);
+  const [reviewFilter, setReviewFilter] = useState('all'); // 'all' | 'driver' | 'rider' | 'reported'
+  const [reviewSearch, setReviewSearch] = useState('');
+  const [removingReview, setRemovingReview] = useState(null);
+  const [removalReason, setRemovalReason] = useState('');
+
+  const fetchReviews = async () => {
+    try {
+      const res = await reviewsApi.getAllReviewsAdmin(reviewFilter, reviewSearch);
+      if (res?.success && res.reviews) {
+        setReviewsList(res.reviews);
+      }
+    } catch (_) {}
+  };
+
   const fetchAdminData = async (silent = false) => {
     if (!silent) setLoadingQueue(true);
     try {
-      const [usersRes, reportsRes, queueRes] = await Promise.all([
+      const [usersRes, reportsRes, queueRes, reviewsRes] = await Promise.all([
         adminApi.getAllUsers().catch(() => null),
         adminApi.getSafetyReports().catch(() => null),
         adminApi.getPendingDrivers().catch(() => null),
+        reviewsApi.getAllReviewsAdmin(reviewFilter, reviewSearch).catch(() => null),
       ]);
 
       if (usersRes?.success && usersRes.users) {
@@ -54,6 +75,9 @@ export const AdminDashboard = ({
       }
       if (reportsRes?.success && reportsRes.reports) {
         setSafetyReports(reportsRes.reports);
+      }
+      if (reviewsRes?.success && reviewsRes.reviews) {
+        setReviewsList(reviewsRes.reviews);
       }
       
       let liveQueue = queueRes?.success && queueRes.queue ? queueRes.queue : [];
@@ -171,7 +195,43 @@ export const AdminDashboard = ({
     setSafetyReports(
       safetyReports.map((r) => (r.id === reportId ? { ...r, status: 'Resolved' } : r))
     );
-    showNotification(`Incident report #${reportId} marked as resolved.`);
+    showNotification(`Incident report #${reportId.slice(0, 8)} marked as resolved.`);
+  };
+
+  const handleUpdateComplaintStatus = async (reportId, newStatus) => {
+    try {
+      const notes = prompt(`Enter optional moderation notes for marking complaint as "${newStatus}":`, 'Investigated and updated by Administrator Krish.') || '';
+      await adminApi.updateComplaintStatus(reportId, newStatus, notes);
+      setSafetyReports((prev) =>
+        prev.map((r) => (r.id === reportId ? { ...r, status: newStatus, adminNotes: notes } : r))
+      );
+      showNotification(`Complaint status updated to "${newStatus}". User notified.`);
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to update complaint status.');
+    }
+  };
+
+  const handleConfirmRemoveReview = async () => {
+    if (!removingReview) return;
+    if (!removalReason.trim()) {
+      alert('A mandatory removal reason must be recorded for admin audit trail.');
+      return;
+    }
+    try {
+      await reviewsApi.removeReviewAdmin(removingReview.id, removalReason.trim());
+      setReviewsList((prev) =>
+        prev.map((r) =>
+          r.id === removingReview.id
+            ? { ...r, status: 'Removed', removalReason: removalReason.trim(), removedBy: 'Administrator Krish' }
+            : r
+        )
+      );
+      setRemovingReview(null);
+      setRemovalReason('');
+      showNotification('Inappropriate review removed. Audit log recorded.');
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to remove review.');
+    }
   };
 
   const handleToggleSuspendUser = async (userId) => {
@@ -215,17 +275,20 @@ export const AdminDashboard = ({
           </p>
         </div>
 
-        {/* Live Admin Clearance */}
-        <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[200px]">
-          <div className="flex items-center justify-between text-slate-300">
-            <span>Admin Clearance:</span>
-            <span className="text-emerald-400 font-bold flex items-center gap-1">
-              <CheckCircle className="w-3.5 h-3.5" /> Full Authority
-            </span>
-          </div>
-          <div className="flex items-center justify-between mt-1 text-slate-300">
-            <span>Pending Approvals:</span>
-            <span className="font-semibold text-white">{queue.length} In Queue</span>
+        {/* Live Admin Clearance & Notifications */}
+        <div className="flex items-center gap-3">
+          <NotificationBell currentUser={currentUser} />
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[200px]">
+            <div className="flex items-center justify-between text-slate-300">
+              <span>Admin Clearance:</span>
+              <span className="text-emerald-400 font-bold flex items-center gap-1">
+                <CheckCircle className="w-3.5 h-3.5" /> Full Authority
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-1 text-slate-300">
+              <span>Pending Approvals:</span>
+              <span className="font-semibold text-white">{queue.length} In Queue</span>
+            </div>
           </div>
         </div>
       </div>
@@ -297,7 +360,22 @@ export const AdminDashboard = ({
           }`}
         >
           <AlertTriangle className="w-4 h-4" />
-          Safety & Disputes ({safetyReports.filter((r) => r.status === 'Open').length})
+          Complaints & Issues ({safetyReports.filter((r) => r.status !== 'Resolved').length})
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('reviews');
+            fetchReviews();
+          }}
+          className={`py-3 px-4 text-xs font-bold border-b-2 transition-all flex items-center gap-2 whitespace-nowrap ${
+            activeTab === 'reviews'
+              ? 'border-emerald-600 text-emerald-700 bg-emerald-50/50 rounded-t-lg'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Star className="w-4 h-4 text-amber-500" />
+          Feedback & Reviews ({reviewsList.length})
         </button>
 
         <button
@@ -515,36 +593,68 @@ export const AdminDashboard = ({
                   </div>
                   <span
                     className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                      report.status === 'Open'
-                        ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      report.status === 'Resolved'
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        : report.status === 'Rejected'
+                        ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                        : report.status === 'Under Review'
+                        ? 'bg-sky-50 text-sky-700 border border-sky-200'
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
                     }`}
                   >
-                    Status: {report.status}
+                    Status: {report.status || 'Pending'}
                   </span>
                 </div>
 
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700">
-                  <span className="font-semibold text-slate-900 block mb-0.5">Complaint Details:</span>
-                  "{report.reason}"
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs text-slate-700 space-y-1">
+                  <div>
+                    <span className="font-semibold text-slate-900">Reporter:</span> {report.reporterName || 'Anonymous'} •{' '}
+                    <span className="font-semibold text-slate-900">Reported Driver/User:</span> {report.driverName || 'Reported Party'}
+                  </div>
+                  <div>
+                    <span className="font-semibold text-slate-900 block mb-0.5">Complaint Details:</span>
+                    "{report.details || report.reason || 'User reported an incident.'}"
+                  </div>
+                  {report.adminNotes && (
+                    <div className="text-[11px] text-slate-500 bg-white p-2 rounded border border-slate-200">
+                      <strong>Admin Moderation Notes:</strong> {report.adminNotes}
+                    </div>
+                  )}
                 </div>
 
-                {report.status === 'Open' && (
-                  <div className="flex justify-end gap-2 pt-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                  <div className="text-[11px] text-slate-400">
+                    {report.moderatedBy && <span>Moderated by {report.moderatedBy}</span>}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {report.reportedUserId && (
+                      <button
+                        onClick={() => handleToggleSuspendUser(report.reportedUserId)}
+                        className="px-2.5 py-1 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors flex items-center gap-1"
+                      >
+                        <UserX className="w-3.5 h-3.5" /> Suspend
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleToggleSuspendUser(report.reportedUserId)}
-                      className="px-3 py-1.5 text-xs font-semibold text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors flex items-center gap-1"
+                      onClick={() => handleUpdateComplaintStatus(report.id, 'Under Review')}
+                      className="px-2.5 py-1 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg border border-sky-200 transition-colors"
                     >
-                      <UserX className="w-3.5 h-3.5" /> Suspend Reported User
+                      Under Review
                     </button>
                     <button
-                      onClick={() => handleResolveReport(report.id)}
-                      className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition-colors flex items-center gap-1"
+                      onClick={() => handleUpdateComplaintStatus(report.id, 'Resolved')}
+                      className="px-2.5 py-1 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-xs transition-colors flex items-center gap-1"
                     >
-                      <CheckCircle className="w-3.5 h-3.5" /> Mark Resolved
+                      <CheckCircle className="w-3.5 h-3.5" /> Resolve
+                    </button>
+                    <button
+                      onClick={() => handleUpdateComplaintStatus(report.id, 'Rejected')}
+                      className="px-2.5 py-1 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 rounded-lg border border-rose-200 transition-colors"
+                    >
+                      Reject
                     </button>
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
@@ -654,6 +764,221 @@ export const AdminDashboard = ({
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: REVIEWS & FEEDBACK MANAGEMENT */}
+      {activeTab === 'reviews' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+                <Star className="w-4 h-4 text-amber-500" />
+                Community Ratings, Feedback & Moderation ({reviewsList.length})
+              </h3>
+              <p className="text-xs text-slate-500">
+                Audit rider and driver reviews, investigate reported feedback, and remove abusive content
+              </p>
+            </div>
+
+            {/* Filter buttons */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: 'all', label: 'All Reviews' },
+                { id: 'driver', label: 'Driver Reviews' },
+                { id: 'rider', label: 'Rider Reviews' },
+                { id: 'reported', label: '⚠️ Reported Feedback' },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setReviewFilter(tab.id);
+                    reviewsApi.getAllReviewsAdmin(tab.id, reviewSearch).then((res) => {
+                      if (res?.success) setReviewsList(res.reviews);
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                    reviewFilter === tab.id
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Search bar */}
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              value={reviewSearch}
+              onChange={(e) => {
+                setReviewSearch(e.target.value);
+                reviewsApi.getAllReviewsAdmin(reviewFilter, e.target.value).then((res) => {
+                  if (res?.success) setReviewsList(res.reviews);
+                });
+              }}
+              placeholder="Search feedback by reviewer, target user, or comment content..."
+              className="w-full pl-9 pr-4 py-2 text-xs rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          {/* Reviews List */}
+          {reviewsList.length === 0 ? (
+            <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-2">
+              <Star className="w-10 h-10 text-slate-300 mx-auto" />
+              <h4 className="text-sm font-bold text-slate-800">No Reviews Found</h4>
+              <p className="text-xs text-slate-500">
+                No feedback matching the selected filter or search keyword.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {reviewsList.map((review) => (
+                <div
+                  key={review.id}
+                  className={`bg-white rounded-2xl border p-4 shadow-xs space-y-3 ${
+                    review.status === 'Removed'
+                      ? 'border-slate-200 bg-slate-50/80 opacity-70'
+                      : review.isReported
+                      ? 'border-rose-300 bg-rose-50/20'
+                      : 'border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-xs text-slate-900">{review.reviewerName}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          review.reviewerRole === 'driver'
+                            ? 'bg-teal-100 text-teal-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}>
+                          {review.reviewerRole}
+                        </span>
+                        <span className="text-[11px] text-amber-500 font-bold">
+                          {'★'.repeat(review.rating)}{'☆'.repeat(5 - review.rating)}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        Reviewed: <strong className="text-slate-800">{review.targetUserName}</strong> •{' '}
+                        {new Date(review.createdAt).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {review.status === 'Removed' ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                          Removed by Admin
+                        </span>
+                      ) : review.isReported ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          ⚠️ Reported by User
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          Active
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-700 italic border border-slate-100">
+                    "{review.comment}"
+                  </div>
+
+                  {review.isReported && review.reportReason && (
+                    <div className="text-[11px] text-rose-800 bg-rose-50 p-2 rounded-lg border border-rose-200">
+                      <strong>Report Reason:</strong> {review.reportReason}
+                    </div>
+                  )}
+
+                  {review.removalReason && (
+                    <div className="text-[11px] text-slate-600 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                      <strong>Removal Audit Note:</strong> {review.removalReason} (by {review.removedBy})
+                    </div>
+                  )}
+
+                  {review.status !== 'Removed' && (
+                    <div className="flex justify-end pt-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRemovingReview(review);
+                          setRemovalReason('');
+                        }}
+                        className="py-1 px-2.5 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" /> Remove Inappropriate Review
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Review Removal Reason Dialog Modal */}
+      {removingReview && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 text-rose-600">
+                <Trash2 className="w-4 h-4" /> Administrative Review Removal
+              </h3>
+              <button
+                type="button"
+                onClick={() => setRemovingReview(null)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-700 space-y-1">
+              <p><strong>Reviewer:</strong> {removingReview.reviewerName}</p>
+              <p><strong>Comment:</strong> "{removingReview.comment}"</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                Mandatory Reason for Removal <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={removalReason}
+                onChange={(e) => setRemovalReason(e.target.value)}
+                placeholder="e.g. Abusive language, hate speech, spam, misleading content, or harassment..."
+                rows={3}
+                className="w-full p-2.5 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-rose-500"
+              />
+              <span className="text-[11px] text-slate-400">
+                Recorded in audit trail. Ordinary users cannot delete other users' reviews.
+              </span>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRemovingReview(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemoveReview}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs"
+              >
+                Confirm Removal
+              </button>
+            </div>
           </div>
         </div>
       )}

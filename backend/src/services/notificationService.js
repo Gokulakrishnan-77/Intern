@@ -60,15 +60,57 @@ export async function notifyDriverRejected(driverId, driverName) {
 }
 
 /**
- * Notify driver — a rider booked seats on their ride.
+ * Notify driver — a rider requested seats on their ride.
  */
 export async function notifyDriverBookingReceived({ driverId, bookingId, riderName, rideOrigin, rideDest, seatsBooked, departureTime }) {
   return createNotification({
     userId: driverId,
     type: 'booking_received',
-    title: '🔔 New Booking Received!',
-    message: `New booking received! ${riderName} has successfully booked ${seatsBooked} seat(s) in your ride.`,
+    title: '🔔 New Booking Request!',
+    message: `New booking request! ${riderName} requested ${seatsBooked} seat(s) for your trip (${rideOrigin?.split(',')[0]} → ${rideDest?.split(',')[0]}). Please Accept or Reject.`,
     eventKey: `booking_${bookingId}`,
     metadata: { bookingId, riderName, rideOrigin, rideDest, seatsBooked, departureTime },
+  });
+}
+
+/**
+ * Notify rider — driver accepted their booking.
+ */
+export async function notifyRiderBookingAccepted({ riderId, bookingId, driverName, driverPhone, rideOrigin, rideDest, departureTime }) {
+  return createNotification({
+    userId: riderId,
+    type: 'booking_accepted',
+    title: '✅ Ride Booking Accepted!',
+    message: `Congratulations! ${driverName} accepted your booking for ${rideOrigin?.split(',')[0]} → ${rideDest?.split(',')[0]} departing at ${departureTime}. Driver Contact: ${driverPhone}.`,
+    eventKey: `booking_accepted_${bookingId}`,
+    metadata: { bookingId, driverName, driverPhone, rideOrigin, rideDest, departureTime },
+  });
+}
+
+/**
+ * Notify rider — driver rejected their booking.
+ */
+export async function notifyRiderBookingRejected({ riderId, bookingId, driverName, rideOrigin, rideDest }) {
+  return createNotification({
+    userId: riderId,
+    type: 'booking_rejected',
+    title: '❌ Booking Request Declined',
+    message: `Your booking request for ${rideOrigin?.split(',')[0]} → ${rideDest?.split(',')[0]} was declined by ${driverName || 'the driver'}.`,
+    eventKey: `booking_rejected_${bookingId}`,
+    metadata: { bookingId, driverName, rideOrigin, rideDest },
+  });
+}
+
+/**
+ * Notify user — complaint / issue status update.
+ */
+export async function notifyComplaintUpdated({ userId, complaintId, newStatus }) {
+  return createNotification({
+    userId,
+    type: 'complaint_update',
+    title: `🛡️ Complaint Status: ${newStatus}`,
+    message: `Your reported complaint #${complaintId.slice(0, 8)} has been reviewed and marked as "${newStatus}" by Administrator Krish.`,
+    eventKey: `complaint_${complaintId}_${newStatus}`,
+    metadata: { complaintId, newStatus },
   });
 }
