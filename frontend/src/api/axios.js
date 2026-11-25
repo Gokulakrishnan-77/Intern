@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const getDefaultBaseURL = () => {
-  return import.meta.env.VITE_API_URL || 'https://intern-n8mg.onrender.com/api';
+  return import.meta.env.VITE_API_URL || 'https://intern-n8mg.onrender.com';
 };
 
 const API_BASE_URL = getDefaultBaseURL();
