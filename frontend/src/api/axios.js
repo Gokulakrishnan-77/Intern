@@ -43,32 +43,18 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
-// Response interceptor for automatic token refresh
+// Response interceptor for handling auth errors
 api.interceptors.response.use(
   (response) => response,
-  async (error) => {
-    const originalRequest = error.config;
-    // Do not intercept or redirect for login/register endpoints
-    const isAuthEndpoint = originalRequest?.url?.includes('/auth/login') || originalRequest?.url?.includes('/auth/register');
-
-    if (error.response?.status === 401 && !originalRequest?._retry && !isAuthEndpoint) {
-      originalRequest._retry = true;
-      try {
-        const refreshResponse = await axios.post(
-          `${API_BASE_URL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        const newToken = refreshResponse.data?.data?.accessToken;
-        if (newToken) {
-          localStorage.setItem('rideshare_access_token', newToken);
-          originalRequest.headers.Authorization = `Bearer ${newToken}`;
-          return api(originalRequest);
-        }
-      } catch (refreshError) {
+  (error) => {
+    // If token expired or unauthorized on protected routes, clear session
+    if (error.response?.status === 401) {
+      const isAuthEndpoint =
+        error.config?.url?.includes('/auth/login') ||
+        error.config?.url?.includes('/auth/register');
+      if (!isAuthEndpoint) {
         localStorage.removeItem('rideshare_access_token');
         localStorage.removeItem('rideshare_user');
-        return Promise.reject(refreshError);
       }
     }
     return Promise.reject(error);
