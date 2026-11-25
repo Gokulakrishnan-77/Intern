@@ -119,6 +119,13 @@ export default function App() {
     };
 
     syncWithSqlBackend();
+
+    // Keepalive ping every 5 minutes while webpage is open (prevents Render from sleeping)
+    const keepAliveInterval = setInterval(() => {
+      api.get('/health').catch(() => {});
+    }, 5 * 60 * 1000);
+
+    return () => clearInterval(keepAliveInterval);
   }, [currentUser]);
 
   const handleLoginSuccess = (user) => {

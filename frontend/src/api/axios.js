@@ -1,13 +1,18 @@
 import axios from 'axios';
 
 const getDefaultBaseURL = () => {
-  return import.meta.env.VITE_API_URL || 'https://intern-n8mg.onrender.com';
+  let url = (import.meta.env.VITE_API_URL || 'https://intern-n8mg.onrender.com/api').trim().replace(/\/$/, '');
+  if (!url.endsWith('/api')) {
+    url = `${url}/api`;
+  }
+  return url;
 };
 
 const API_BASE_URL = getDefaultBaseURL();
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 60000, // 60 seconds timeout - allows Render free-tier instance to wake up from sleep
   headers: {
     'Content-Type': 'application/json',
   },
