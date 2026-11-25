@@ -60,6 +60,12 @@ export function validateEmail(value) {
     return { valid: false, message: 'Please enter a valid email address.' };
   }
 
+  // Reject emails where the local part (before @) is entirely numeric
+  const localPart = value.trim().split('@')[0];
+  if (/^\d+$/.test(localPart)) {
+    return { valid: false, message: 'Please enter a valid email address.' };
+  }
+
   return { valid: true, message: '' };
 }
 

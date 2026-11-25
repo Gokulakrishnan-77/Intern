@@ -19,10 +19,12 @@ const emailSchema = z
   .string()
   .trim()
   .toLowerCase()
-  .min(1, 'Please enter a valid email address.')
+  .min(3, 'Please enter a valid email address.')
   .max(50, 'Please enter a valid email address.')
   .email('Please enter a valid email address.')
-  .regex(/^\S+$/, 'Please enter a valid email address.');
+  .regex(/^\S+$/, 'Please enter a valid email address.')
+  // Reject emails where the local part (before @) is entirely numeric e.g. 123456@gmail.com
+  .refine(v => !/^\d+@/.test(v), 'Please enter a valid email address.');
 
 const mobileSchema = z
   .string()
