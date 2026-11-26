@@ -1269,7 +1269,9 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
               Total Commute Money Saved
             </h4>
-            <p className="text-3xl font-extrabold text-slate-900 mt-2">$128.50</p>
+            <p className="text-3xl font-extrabold text-slate-900 mt-2">
+              {formatFare(128.5, currency)}
+            </p>
             <p className="text-xs text-slate-500 mt-1">Compared to solo driving & taxis</p>
           </div>
 
