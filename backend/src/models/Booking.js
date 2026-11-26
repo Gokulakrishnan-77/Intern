@@ -34,6 +34,18 @@ export const Booking = sequelize.define(
       type: DataTypes.STRING, // 'Pending', 'Accepted', 'Confirmed', 'Rejected', 'Cancelled', 'Completed'
       defaultValue: 'Pending',
     },
+    otpCode: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    otpExpiresAt: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    otpVerified: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+    },
   },
   {
     tableName: 'bookings',

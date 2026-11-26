@@ -71,6 +71,16 @@ export const bookingsApi = {
     return res.data;
   },
 
+  sendBookingOtp: async (id) => {
+    const res = await api.post(`/bookings/${id}/send-otp`);
+    return res.data;
+  },
+
+  verifyBookingOtp: async (id, otp) => {
+    const res = await api.post(`/bookings/${id}/verify-otp`, { otp });
+    return res.data;
+  },
+
   acceptBooking: async (id) => {
     const res = await api.put(`/bookings/${id}/accept`);
     return res.data;

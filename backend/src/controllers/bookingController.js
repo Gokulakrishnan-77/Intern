@@ -5,6 +5,7 @@ import {
   notifyRiderBookingRejected,
 } from '../services/notificationService.js';
 import { sendBookingAcceptedSms } from '../services/smsService.js';
+import { sendBrevoOtp } from '../services/brevoService.js';
 
 // ── CREATE BOOKING (Rider requests seats) ────────────────────────────────────
 export const createBooking = async (req, res) => {
@@ -98,6 +99,171 @@ export const createBooking = async (req, res) => {
   } catch (error) {
     console.error('[createBooking Error]:', error);
     return res.status(500).json({ success: false, message: 'Failed to create booking.' });
+  }
+};
+
+// ── REQUEST / DISPATCH OTP FOR BOOKING ACCEPTANCE (BREVO) ────────────────────
+export const sendBookingOtp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const driverId = req.user.id;
+
+    const booking = await Booking.findByPk(id, {
+      include: [
+        { model: Ride, as: 'ride' },
+        { model: User, as: 'rider', attributes: ['id', 'name', 'phone', 'email'] },
+      ],
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking request not found.' });
+    }
+
+    if (booking.ride?.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: 'Only the ride driver can initiate acceptance.' });
+    }
+
+    if (booking.status === 'Accepted' || booking.status === 'Confirmed') {
+      return res.status(400).json({ success: false, message: 'This booking is already confirmed.' });
+    }
+
+    // Generate secure 6-digit numeric OTP
+    const generatedOtp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+
+    booking.otpCode = generatedOtp;
+    booking.otpExpiresAt = expiresAt;
+    booking.otpVerified = false;
+    await booking.save();
+
+    // Dispatch via Brevo Service
+    const brevoResult = await sendBrevoOtp({
+      recipientPhone: booking.rider?.phone,
+      recipientEmail: booking.rider?.email,
+      recipientName: booking.rider?.name,
+      otpCode: generatedOtp,
+      driverName: req.user.name,
+      origin: booking.ride?.originAddress,
+      destination: booking.ride?.destAddress,
+    });
+
+    return res.json({
+      success: true,
+      message: `Mobile OTP dispatched to Rider ${booking.rider?.name || ''} via Brevo.`,
+      bookingId: booking.id,
+      expiresAt,
+      // Pass debugOtp if in development/simulated mode for seamless verification
+      debugOtp: process.env.NODE_ENV !== 'production' || !process.env.BREVO_API_KEY ? generatedOtp : undefined,
+      brevoResult,
+    });
+  } catch (error) {
+    console.error('[sendBookingOtp Error]:', error);
+    return res.status(500).json({ success: false, message: 'Failed to send verification OTP via Brevo.' });
+  }
+};
+
+// ── VERIFY OTP AND COMPLETE ACCEPTANCE ───────────────────────────────────────
+export const verifyBookingOtp = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { otp } = req.body;
+    const driverId = req.user.id;
+
+    if (!otp) {
+      return res.status(400).json({ success: false, message: 'Verification OTP is required.' });
+    }
+
+    const booking = await Booking.findByPk(id, {
+      include: [
+        { model: Ride, as: 'ride' },
+        { model: User, as: 'rider', attributes: ['id', 'name', 'phone', 'email'] },
+      ],
+    });
+
+    if (!booking) {
+      return res.status(404).json({ success: false, message: 'Booking request not found.' });
+    }
+
+    if (booking.ride?.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized driver.' });
+    }
+
+    // Validate OTP
+    const cleanSubmittedOtp = String(otp).trim();
+    if (booking.otpCode !== cleanSubmittedOtp) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid OTP code. Please enter the 6-digit code received by the rider.',
+      });
+    }
+
+    if (booking.otpExpiresAt && new Date() > new Date(booking.otpExpiresAt)) {
+      return res.status(400).json({
+        success: false,
+        message: 'OTP has expired. Please request a new verification code.',
+      });
+    }
+
+    // Mark as verified and accepted
+    booking.otpVerified = true;
+    booking.status = 'Accepted';
+
+    const ride = booking.ride;
+    if (ride) {
+      ride.availableSeats = Math.max(0, ride.availableSeats - booking.seatsRequested);
+      if (ride.availableSeats === 0) {
+        ride.status = 'fully_booked';
+      }
+      await ride.save();
+    }
+
+    await booking.save();
+
+    // Send final acceptance SMS confirmation via Brevo / SMS Service
+    const driver = await User.findByPk(driverId, {
+      attributes: ['id', 'name', 'phone', 'email'],
+    });
+
+    if (booking.rider?.phone) {
+      await sendBookingAcceptedSms({
+        bookingId: booking.id,
+        riderPhone: booking.rider.phone,
+        riderName: booking.rider.name,
+        driverName: driver?.name,
+        driverPhone: driver?.phone || 'Contact via app',
+        origin: ride?.originAddress,
+        destination: ride?.destAddress,
+        departureTime: ride?.departureTime,
+        seatsBooked: booking.seatsRequested,
+      });
+    }
+
+    await notifyRiderBookingAccepted({
+      riderId: booking.riderId,
+      bookingId: booking.id,
+      driverName: driver?.name || 'Your driver',
+      driverPhone: driver?.phone || 'Contact via app',
+      rideOrigin: ride?.originAddress,
+      rideDest: ride?.destAddress,
+      departureTime: ride?.departureTime,
+    });
+
+    return res.json({
+      success: true,
+      message: `✅ OTP Verified! Booking officially accepted. Driver and Rider contacts unlocked.`,
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        otpVerified: true,
+        riderName: booking.rider?.name,
+        riderPhone: booking.rider?.phone,
+        canCallRider: true,
+        remainingSeats: ride?.availableSeats,
+      },
+    });
+  } catch (error) {
+    console.error('[verifyBookingOtp Error]:', error);
+    return res.status(500).json({ success: false, message: 'Failed to verify OTP.' });
   }
 };
 
