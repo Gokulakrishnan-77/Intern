@@ -10,16 +10,17 @@ export const authenticate = async (req, res, next) => {
       token = req.cookies.token;
     }
 
-    if (!token) {
-      // Check if email header is passed for admin or driver
-      const emailHeader = req.headers['x-user-email'] || req.headers['x-admin-email'];
-      if (emailHeader) {
-        const found = await User.findOne({ where: { email: emailHeader.toLowerCase().trim() } });
-        if (found) {
-          req.user = found;
-          return next();
-        }
+    // Prioritize x-user-email or x-admin-email header if present (ensures exact user match)
+    const emailHeader = req.headers['x-user-email'] || req.headers['x-admin-email'];
+    if (emailHeader) {
+      const found = await User.findOne({ where: { email: emailHeader.toLowerCase().trim() } });
+      if (found) {
+        req.user = found;
+        return next();
       }
+    }
+
+    if (!token) {
       return res.status(401).json({ success: false, message: 'Authentication required. Token missing.' });
     }
 
