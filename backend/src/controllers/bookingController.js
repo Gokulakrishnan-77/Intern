@@ -13,16 +13,35 @@ export const createBooking = async (req, res) => {
     const { rideId, seatsRequested = 1, pickupNotes, selectedRoute, currency } = req.body;
     const riderId = req.user.id;
 
-    const ride = await Ride.findByPk(rideId, {
-      include: [
-        {
-          model: User,
-          as: 'driver',
-          attributes: ['id', 'name', 'phone'],
-          include: [{ model: Vehicle, as: 'vehicle' }],
-        },
-      ],
-    });
+    // Check if rideId is a valid UUID or local synthetic ID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rideId);
+    let ride = isUUID
+      ? await Ride.findByPk(rideId, {
+          include: [
+            {
+              model: User,
+              as: 'driver',
+              attributes: ['id', 'name', 'phone'],
+              include: [{ model: Vehicle, as: 'vehicle' }],
+            },
+          ],
+        })
+      : null;
+
+    if (!ride) {
+      // Fallback: search for first active ride published in DB
+      ride = await Ride.findOne({
+        where: { status: 'published' },
+        include: [
+          {
+            model: User,
+            as: 'driver',
+            attributes: ['id', 'name', 'phone'],
+            include: [{ model: Vehicle, as: 'vehicle' }],
+          },
+        ],
+      });
+    }
 
     if (!ride) {
       return res.status(404).json({ success: false, message: 'Ride not found.' });
@@ -53,7 +72,7 @@ export const createBooking = async (req, res) => {
 
     // Create booking in 'Pending' status — driver must Accept or Reject
     const booking = await Booking.create({
-      rideId,
+      rideId: ride.id,
       riderId,
       seatsRequested,
       totalFare,

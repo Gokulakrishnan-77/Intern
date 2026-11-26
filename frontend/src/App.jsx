@@ -284,18 +284,26 @@ export default function App() {
   };
 
   const handlePostRide = async (newRide) => {
+    let rideToSave = { ...newRide };
     try {
-      if (isBackendOnline) {
-        await ridesApi.publishRide(newRide);
+      const res = await ridesApi.publishRide(newRide);
+      if (res?.success && res.ride) {
+        rideToSave = {
+          ...rideToSave,
+          id: res.ride.id,
+          _id: res.ride.id,
+          backendId: res.ride.id,
+        };
       }
     } catch (err) {
       console.warn('Backend sync failed, storing in local state:', err);
     }
-    const updated = [newRide, ...publishedRides];
+    const updated = [rideToSave, ...publishedRides.filter((r) => r.id !== rideToSave.id)];
     setPublishedRides(updated);
     try {
       localStorage.setItem('rideshare_published_rides', JSON.stringify(updated));
     } catch (e) {}
+    return rideToSave;
   };
 
   const handleBookingConfirmed = (bookingData, ride) => {
@@ -324,24 +332,29 @@ export default function App() {
 
     // 2. Notify the driver via message & persist to driver notifications
     const driverTargetId = ride?.driver?.id || ride?.driverId;
+    const driverEmail = ride?.driver?.email || '';
+    const driverName = ride?.driver?.name || 'Driver';
     const notificationMessage = {
       id: 'msg_' + Date.now(),
       type: 'BOOKING_CONFIRMED',
       driverId: driverTargetId,
-      driverName: ride?.driver?.name || 'Driver',
+      driverEmail: driverEmail,
+      driverName: driverName,
       riderId: currentUser?.id,
       riderName: currentUser?.name || 'Commuter',
       riderPhone: currentUser?.phone || 'Not provided',
       riderEmail: currentUser?.email || '',
       rideId: targetRideId,
-      origin: ride?.origin?.address || ride?.originAddress || 'Origin Point',
-      destination: ride?.destination?.address || ride?.destAddress || 'Destination Point',
+      origin: ride?.origin?.address || ride?.originAddress || (typeof ride?.origin === 'string' ? ride.origin : 'Origin Point'),
+      destination: ride?.destination?.address || ride?.destAddress || (typeof ride?.destination === 'string' ? ride.destination : 'Destination Point'),
       seatsBooked,
       remainingSeats: Math.max(0, (ride?.availableSeats ?? ride?.seatsAvailable ?? 1) - seatsBooked),
       totalCost: bookingData.totalCost,
       pickupNotes: bookingData.pickupNotes || '',
+      status: 'Pending',
       timestamp: new Date().toISOString(),
-      text: `🔔 Rider ${currentUser?.name || 'A commuter'} has confirmed ${seatsBooked} seat(s) for your trip (${(ride?.origin?.address || ride?.originAddress || '').split(',')[0]} → ${(ride?.destination?.address || ride?.destAddress || '').split(',')[0]}). Remaining vacant seats: ${Math.max(0, (ride?.availableSeats ?? ride?.seatsAvailable ?? 1) - seatsBooked)}.`,
+      bookedAt: new Date().toISOString(),
+      text: `🔔 Rider ${currentUser?.name || 'A commuter'} has confirmed ${seatsBooked} seat(s) for your trip (${(ride?.origin?.address || ride?.originAddress || (typeof ride?.origin === 'string' ? ride.origin : '')).split(',')[0]} → ${(ride?.destination?.address || ride?.destAddress || (typeof ride?.destination === 'string' ? ride.destination : '')).split(',')[0]}). Remaining vacant seats: ${Math.max(0, (ride?.availableSeats ?? ride?.seatsAvailable ?? 1) - seatsBooked)}.`,
     };
 
     try {

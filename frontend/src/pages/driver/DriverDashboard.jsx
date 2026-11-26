@@ -433,7 +433,18 @@ export const DriverDashboard = ({
       }
       try {
         const local = JSON.parse(localStorage.getItem('rideshare_driver_notifications') || '[]');
-        local.forEach((item) => {
+        // Filter local notifications for this driver
+        const relevantLocal = local.filter((item) => {
+          if (!currentUser) return true;
+          // Match by driverId, driverEmail, or driverName
+          if (item.driverId && (item.driverId === currentUser.id || item.driverId === currentUser._id)) return true;
+          if (item.driverEmail && currentUser.email && item.driverEmail.toLowerCase() === currentUser.email.toLowerCase()) return true;
+          if (item.driverName && currentUser.name && item.driverName.toLowerCase() === currentUser.name.toLowerCase()) return true;
+          // If no specific driver info attached, show if user is driver
+          return !item.driverId && !item.driverEmail && !item.driverName;
+        });
+
+        relevantLocal.forEach((item) => {
           if (!combined.some((c) => c.id === item.id)) {
             combined.push(item);
           }
@@ -832,10 +843,11 @@ export const DriverDashboard = ({
       status: 'published',
     };
 
-    setMyRides([newRide, ...myRides]);
-    if (onPostRide) {
-      onPostRide(newRide);
-    }
+    const createdRide = onPostRide ? onPostRide(newRide) : newRide;
+    Promise.resolve(createdRide).then((persisted) => {
+      const finalRide = persisted || newRide;
+      setMyRides((prev) => [finalRide, ...prev.filter((r) => r.id !== newRide.id && r.id !== finalRide.id)]);
+    });
     alert(
       `Commute published on Google Maps with your ${verificationForm.vehicleType.toUpperCase()}! Riders can now book seats.`
     );
