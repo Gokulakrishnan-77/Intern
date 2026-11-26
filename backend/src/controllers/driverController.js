@@ -19,6 +19,28 @@ export const submitVerification = async (req, res) => {
       });
     }
 
+    // Indian vehicle registration number format validation
+    const cleanPlate = vehicle.plateNumber.trim().toUpperCase().replace(/[\s\-_.]+/g, '');
+    const validIndianPlate =
+      /^([A-Z]{2}\d{1,2}[A-Z]{0,3}\d{1,4})$/.test(cleanPlate) ||
+      /^(\d{2}BH\d{4}[A-Z]{1,2})$/.test(cleanPlate);
+
+    if (!validIndianPlate || cleanPlate.length < 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Indian vehicle registration number. Example: TN38AB1234 or DL01A1234.',
+      });
+    }
+
+    // Indian Driving License format validation (alphanumeric, valid state prefix, 9-18 chars)
+    const cleanDL = licenseNumber.trim().toUpperCase().replace(/[\s\-_./]+/g, '');
+    if (!/^[A-Z]{2}[A-Z0-9]{7,16}$/.test(cleanDL)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid Indian Driving License number format (e.g. TN3820200001234).',
+      });
+    }
+
     // ── DUPLICATE REQUEST GUARD ──────────────────────────────────────────────
     // Check if driver already has a pending verification request
     const existingPending = await DriverVerification.findOne({

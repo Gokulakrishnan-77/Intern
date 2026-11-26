@@ -255,3 +255,107 @@ export function normalizeEmail(value) {
 export function normalizeMobile(value) {
   return value.replace(/[\s\-]/g, '');
 }
+
+// ─── 7. Indian Vehicle Registration Number Validation ─────────────────────────
+// Standard Indian Vehicle Registration format:
+// e.g. TN-38-AA-1234, TN38AA1234, DL-01-A-0001, MH 12 AB 1234, DL 1C AA 1111 (or Bharat series: 22 BH 1234 AA)
+export function normalizeVehiclePlate(value) {
+  if (!value) return '';
+  return value.trim().toUpperCase().replace(/[\s\-_.]+/g, '');
+}
+
+export function validateVehiclePlate(value) {
+  if (!value || !value.trim()) {
+    return { valid: false, message: 'Please enter a valid Indian vehicle registration number.' };
+  }
+
+  const clean = normalizeVehiclePlate(value);
+
+  // Standard Indian state codes (28 states + 8 UTs + BH series)
+  const validStateCodes = new Set([
+    'AP','AR','AS','BR','CG','CH','DD','DL','DN','GA','GJ','HR','HP','JH','JK','KA','KL','LA','LD','MH','ML','MN','MP','MZ','NL','OD','PB','PY','RJ','SK','TN','TR','TS','UK','UP','WB','AN',
+    'BH' // Bharat Series
+  ]);
+
+  // Case A: Bharat Series (e.g., 22BH1234AB)
+  const bhRegex = /^(\d{2})BH(\d{4})([A-Z]{1,2})$/;
+  if (bhRegex.test(clean)) {
+    return { valid: true, message: '', normalized: clean };
+  }
+
+  // Case B: Standard Format (StateCode[2] + DistrictCode[2] + OptionalSeries[1-3] + Digits[1-4])
+  // e.g. TN38AB1234, DL01A1234, KA051234, MH121234
+  const standardRegex = /^([A-Z]{2})(\d{1,2})([A-Z]{0,3})(\d{1,4})$/;
+  const match = clean.match(standardRegex);
+
+  if (!match) {
+    return {
+      valid: false,
+      message: 'Invalid registration format. Example: TN-38-AB-1234 or DL-01-A-1234',
+    };
+  }
+
+  const stateCode = match[1];
+  if (!validStateCodes.has(stateCode)) {
+    return {
+      valid: false,
+      message: `Invalid State / UT code "${stateCode}". Must be a valid Indian state code (e.g. TN, DL, KA, MH).`,
+    };
+  }
+
+  const digits = match[4];
+  if (digits === '0000' || digits.length < 1) {
+    return { valid: false, message: 'Registration number cannot be all zeroes.' };
+  }
+
+  return { valid: true, message: '', normalized: clean };
+}
+
+// ─── 8. Indian Driving License Number Validation ─────────────────────────────
+// Standard Indian Driving License format:
+// 15-16 alphanumeric characters: State code (2 letters) + RTO/Year + Digits
+// e.g. TN0120150001234, DL-0420110012345, KA01 20180005678, TN-38-2022-0001234
+export function normalizeDrivingLicense(value) {
+  if (!value) return '';
+  return value.trim().toUpperCase().replace(/[\s\-_./]+/g, '');
+}
+
+export function validateDrivingLicense(value) {
+  if (!value || !value.trim()) {
+    return { valid: false, message: 'Please enter a valid Indian Driving License number.' };
+  }
+
+  const clean = normalizeDrivingLicense(value);
+
+  const validStateCodes = new Set([
+    'AP','AR','AS','BR','CG','CH','DD','DL','DN','GA','GJ','HR','HP','JH','JK','KA','KL','LA','LD','MH','ML','MN','MP','MZ','NL','OD','PB','PY','RJ','SK','TN','TR','TS','UK','UP','WB','AN'
+  ]);
+
+  // Standard Sarathi Parivahan DL format is 15-16 characters:
+  // SS-RR-YYYY-NNNNNNN (SS=State, RR=RTO 2 digits, YYYY=Year 4 digits, N=7 digits)
+  // Also permits legacy 10 to 16 char formats
+  if (clean.length < 9 || clean.length > 18) {
+    return {
+      valid: false,
+      message: 'Driving License number must be between 9 and 18 alphanumeric characters (e.g. TN3820200001234).',
+    };
+  }
+
+  const stateCode = clean.substring(0, 2);
+  if (!validStateCodes.has(stateCode)) {
+    return {
+      valid: false,
+      message: `Invalid DL state code "${stateCode}". Must start with a valid Indian state code (e.g. TN, KA, MH, DL).`,
+    };
+  }
+
+  // Must only contain letters and numbers
+  if (!/^[A-Z0-9]+$/.test(clean)) {
+    return {
+      valid: false,
+      message: 'Driving License number must contain only letters and digits.',
+    };
+  }
+
+  return { valid: true, message: '', normalized: clean };
+}

@@ -38,6 +38,12 @@ import {
 import { GoogleMapView } from '../../components/maps/GoogleMapView';
 import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete';
 import { calculateFairCost, calculateCO2SavedKg } from '../../services/osrm';
+import {
+  validateVehiclePlate,
+  validateDrivingLicense,
+  normalizeVehiclePlate,
+  normalizeDrivingLicense,
+} from '../../utils/validation';
 import { reverseGeocode } from '../../services/nominatim';
 import { driverApi, bookingsApi, ridesApi } from '../../api';
 import { NotificationBell } from '../../components/common/NotificationBell';
@@ -596,6 +602,21 @@ export const DriverDashboard = ({
       alert('Please provide your Driving License Number and Vehicle Plate Number.');
       return;
     }
+
+    // Indian Vehicle Plate Number Format Validation
+    const plateValidation = validateVehiclePlate(verificationForm.plateNumber);
+    if (!plateValidation.valid) {
+      alert(`Invalid Vehicle Registration Number:\n${plateValidation.message}`);
+      return;
+    }
+
+    // Indian Driving License Format Validation
+    const dlValidation = validateDrivingLicense(verificationForm.licenseNumber);
+    if (!dlValidation.valid) {
+      alert(`Invalid Driving License Number:\n${dlValidation.message}`);
+      return;
+    }
+
     if (!verificationForm.vehicleMake.trim() || !verificationForm.vehicleModel.trim()) {
       alert('Please enter your Vehicle Make and Model.');
       return;
@@ -611,18 +632,18 @@ export const DriverDashboard = ({
       driverName: currentUser?.name || '',
       driverEmail: currentUser?.email || '',
       driverPhone: currentUser?.phone || '',
-      licenseNumber: verificationForm.licenseNumber.trim(),
+      licenseNumber: normalizeDrivingLicense(verificationForm.licenseNumber),
       licenseExpiry: verificationForm.licenseExpiry,
       licenseDocument: verificationForm.licenseDocumentName,
       licenseDocumentData: verificationForm.licenseDocumentData || null,
       insuranceNumber: verificationForm.insuranceNumber.trim(),
-      rcNumber: verificationForm.rcNumber ? verificationForm.rcNumber.trim() : '',
+      rcNumber: verificationForm.rcNumber ? normalizeVehiclePlate(verificationForm.rcNumber) : '',
       vehicle: {
         type: verificationForm.vehicleType,
         make: verificationForm.vehicleMake.trim(),
         model: verificationForm.vehicleModel.trim(),
         year: verificationForm.vehicleYear,
-        plateNumber: verificationForm.plateNumber.trim(),
+        plateNumber: normalizeVehiclePlate(verificationForm.plateNumber),
         seats: verificationForm.totalSeats,
         fuelType: verificationForm.fuelType,
         helmetProvided: verificationForm.helmetProvided,
@@ -808,54 +829,56 @@ export const DriverDashboard = ({
         </div>
 
         {/* Verification Status Pill & Notification Bell */}
-        <div className="flex items-center gap-3">
-          <NotificationBell currentUser={currentUser} />
-          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3.5 border border-white/15 text-xs text-left min-w-[240px]">
-          <div className="flex items-center justify-between text-slate-200">
-            <span>Vehicle Type:</span>
-            <span className="font-bold text-emerald-300 capitalize">
-              {verificationForm.vehicleType === 'bike'
-                ? '🏍️ Motorcycle'
-                : verificationForm.vehicleType === 'scooty'
-                ? '🛵 Scooty'
-                : verificationForm.vehicleType === 'car'
-                ? '🚗 Car'
-                : 'Not Selected'}
-            </span>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
+          <div className="flex items-center gap-3">
+            <NotificationBell currentUser={currentUser} />
           </div>
-          <div className="flex items-center justify-between mt-1.5 text-slate-200">
-            <span>Admin Review:</span>
-            <span
-              className={`font-bold flex items-center gap-1 ${
-                status === 'verified'
-                  ? 'text-emerald-400'
-                  : status === 'pending'
-                  ? 'text-amber-300'
-                  : status === 'rejected'
-                  ? 'text-rose-400'
-                  : 'text-slate-300'
-              }`}
-            >
-              {status === 'verified' ? (
-                <>
-                  <CheckCircle className="w-3.5 h-3.5" /> Approved by Admin Krish
-                </>
-              ) : status === 'pending' ? (
-                <>
-                  <Clock className="w-3.5 h-3.5" /> In Review Queue
-                </>
-              ) : status === 'rejected' ? (
-                <>
-                  <XCircle className="w-3.5 h-3.5" /> Rejected
-                </>
-              ) : (
-                <>
-                  <FileText className="w-3.5 h-3.5" /> Awaiting Submission
-                </>
-              )}
-            </span>
+          <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left w-full sm:min-w-[220px]">
+            <div className="flex items-center justify-between text-slate-200">
+              <span>Vehicle Type:</span>
+              <span className="font-bold text-emerald-300 capitalize">
+                {verificationForm.vehicleType === 'bike'
+                  ? '🏍️ Motorcycle'
+                  : verificationForm.vehicleType === 'scooty'
+                  ? '🛵 Scooty'
+                  : verificationForm.vehicleType === 'car'
+                  ? '🚗 Car'
+                  : 'Not Selected'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between mt-1 text-slate-200">
+              <span>Admin Review:</span>
+              <span
+                className={`font-bold flex items-center gap-1 ${
+                  status === 'verified'
+                    ? 'text-emerald-400'
+                    : status === 'pending'
+                    ? 'text-amber-300'
+                    : status === 'rejected'
+                    ? 'text-rose-400'
+                    : 'text-slate-300'
+                }`}
+              >
+                {status === 'verified' ? (
+                  <>
+                    <CheckCircle className="w-3.5 h-3.5" /> Approved
+                  </>
+                ) : status === 'pending' ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5" /> In Review
+                  </>
+                ) : status === 'rejected' ? (
+                  <>
+                    <XCircle className="w-3.5 h-3.5" /> Rejected
+                  </>
+                ) : (
+                  <>
+                    <FileText className="w-3.5 h-3.5" /> Awaiting
+                  </>
+                )}
+              </span>
+            </div>
           </div>
-        </div>
         </div>
       </div>
 
@@ -1115,12 +1138,15 @@ export const DriverDashboard = ({
                     type="text"
                     value={verificationForm.licenseNumber}
                     onChange={(e) =>
-                      setVerificationForm({ ...verificationForm, licenseNumber: e.target.value })
+                      setVerificationForm({ ...verificationForm, licenseNumber: e.target.value.toUpperCase() })
                     }
-                    placeholder="Enter Driving License Number"
+                    placeholder="e.g. TN3820200001234"
                     className="w-full text-xs font-mono uppercase border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-400 placeholder:font-normal"
                     required
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Standard Indian Driving License format (State Code + RTO/Year + Number)
+                  </p>
                 </div>
 
                 <div>
@@ -1176,12 +1202,15 @@ export const DriverDashboard = ({
                     type="text"
                     value={verificationForm.plateNumber}
                     onChange={(e) =>
-                      setVerificationForm({ ...verificationForm, plateNumber: e.target.value })
+                      setVerificationForm({ ...verificationForm, plateNumber: e.target.value.toUpperCase() })
                     }
-                    placeholder="Enter License Plate Number"
+                    placeholder="e.g. TN-38-AB-1234"
                     className="w-full text-xs font-mono uppercase border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500 placeholder:text-slate-400 placeholder:font-normal"
                     required
                   />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Indian vehicle registration (e.g. TN-38-AB-1234 or DL-01-A-1234)
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -2082,17 +2111,21 @@ export const DriverDashboard = ({
                         <div className="flex items-center gap-2">
                           <h4 className="font-bold text-sm text-slate-900">{item.riderName}</h4>
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            item.status === 'Accepted' || item.status === 'Confirmed'
+                            item.status?.toLowerCase() === 'accepted' || item.status?.toLowerCase() === 'confirmed'
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : item.status === 'Rejected'
+                              : item.status?.toLowerCase() === 'rejected'
                               ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                              : item.status?.toLowerCase() === 'cancelled'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-300'
                               : 'bg-amber-100 text-amber-800 border border-amber-300'
                           }`}>
-                            {item.status === 'Accepted' || item.status === 'Confirmed'
+                            {item.status?.toLowerCase() === 'accepted' || item.status?.toLowerCase() === 'confirmed'
                               ? 'Confirmed (SMS Sent)'
-                              : item.status === 'Rejected'
+                              : item.status?.toLowerCase() === 'rejected'
                               ? 'Declined'
-                              : 'Pending Your Approval'}
+                              : item.status?.toLowerCase() === 'cancelled'
+                              ? 'Cancelled'
+                              : 'Pending Approval'}
                           </span>
                         </div>
                         <span className="text-xs text-slate-500">
@@ -2158,7 +2191,7 @@ export const DriverDashboard = ({
                     </div>
 
                     <div className="flex items-center gap-2">
-                      {item.status === 'Pending' ? (
+                      {(!item.status || item.status.toLowerCase() === 'pending') ? (
                         <>
                           <button
                             type="button"
@@ -2175,12 +2208,12 @@ export const DriverDashboard = ({
                             <XCircle className="w-4 h-4" /> Decline
                           </button>
                         </>
-                      ) : item.status === 'Accepted' || item.status === 'Confirmed' ? (
+                      ) : item.status.toLowerCase() === 'accepted' || item.status.toLowerCase() === 'confirmed' ? (
                         <div className="flex items-center gap-2">
                           <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
                             <CheckCheck className="w-3.5 h-3.5" /> SMS Delivered
                           </span>
-                          {item.riderPhone && (
+                          {item.riderPhone && item.riderPhone !== 'Protected until accepted' && (
                             <a
                               href={`tel:${item.riderPhone}`}
                               className="py-1.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-xs transition-colors flex items-center gap-1 text-xs"
@@ -2189,6 +2222,14 @@ export const DriverDashboard = ({
                             </a>
                           )}
                         </div>
+                      ) : item.status.toLowerCase() === 'rejected' ? (
+                        <span className="text-xs text-rose-600 font-semibold bg-rose-50 px-2 py-1 rounded border border-rose-200">
+                          Declined
+                        </span>
+                      ) : item.status.toLowerCase() === 'cancelled' ? (
+                        <span className="text-xs text-slate-500 font-semibold bg-slate-100 px-2 py-1 rounded border border-slate-200">
+                          Cancelled
+                        </span>
                       ) : (
                         <span className="text-xs text-slate-400 font-medium">Request Closed</span>
                       )}

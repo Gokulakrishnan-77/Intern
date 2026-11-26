@@ -12,26 +12,36 @@ export const GoogleMapView = ({
 }) => {
   const [mapType, setMapType] = useState('roadmap'); // 'roadmap' | 'satellite'
 
-  // Extract query addresses or coordinates for Google Maps
-  const originQuery =
-    typeof origin === 'object' && origin?.lat && origin?.lon
-      ? `${origin.lat},${origin.lon}`
-      : typeof origin === 'object' && origin?.displayName
-      ? encodeURIComponent(origin.displayName)
-      : origin || 'Bangalore, India';
+  // Extract and validate query addresses or coordinates for Google Maps
+  // Format coordinates as lat,lon after validating ranges (-90 to 90 lat, -180 to 180 lon)
+  const formatLocationParam = (loc, fallback) => {
+    if (typeof loc === 'object' && loc !== null) {
+      const lat = parseFloat(loc.lat);
+      const lon = parseFloat(loc.lon);
+      if (!isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+        return `${lat},${lon}`;
+      }
+      if (loc.displayName && loc.displayName.trim()) {
+        return encodeURIComponent(loc.displayName.trim());
+      }
+    }
+    if (typeof loc === 'string' && loc.trim()) {
+      return encodeURIComponent(loc.trim());
+    }
+    return fallback;
+  };
 
-  const destQuery =
-    typeof destination === 'object' && destination?.lat && destination?.lon
-      ? `${destination.lat},${destination.lon}`
-      : typeof destination === 'object' && destination?.displayName
-      ? encodeURIComponent(destination.displayName)
-      : destination || 'Electronic City, Bangalore, India';
+  const originQuery = formatLocationParam(origin, 'Bangalore, India');
+  const destQuery = formatLocationParam(destination, 'Electronic City, Bangalore, India');
 
   // Build waypoints string for Google Maps ("+to:" syntax in daddr)
   const waypointSegments = waypoints
-    .filter((wp) => wp?.lat && wp?.lon)
-    .map((wp) => `${wp.lat},${wp.lon}`)
-    .map((coord) => `+to:${coord}`)
+    .filter((wp) => {
+      const lat = parseFloat(wp?.lat);
+      const lon = parseFloat(wp?.lon);
+      return !isNaN(lat) && !isNaN(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+    })
+    .map((wp) => `+to:${wp.lat},${wp.lon}`)
     .join('');
 
   // Google Maps Directions Embed URL with waypoints support
@@ -144,15 +154,15 @@ export const GoogleMapView = ({
       </div>
 
       {/* Route Legend Footer */}
-      <div className="bg-white/95 backdrop-blur-md px-4 py-2 border-t border-slate-200 text-[11px] text-slate-600 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <div className="bg-white/95 backdrop-blur-md px-3 sm:px-4 py-2 border-t border-slate-200 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-1.5">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <span className="flex items-center gap-1 font-medium text-emerald-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-600"></span> Pickup (
+            <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0"></span> Pickup (
             {isCurrentGpsOrigin ? 'Your Current Location' : typeof origin === 'object' ? origin.displayName?.split(',')[0] : 'Origin'}
             )
           </span>
           <span className="flex items-center gap-1 font-medium text-rose-800">
-            <span className="w-2 h-2 rounded-full bg-rose-600"></span> Dropoff (
+            <span className="w-2 h-2 rounded-full bg-rose-600 shrink-0"></span> Dropoff (
             {typeof destination === 'object' ? destination.displayName?.split(',')[0] : 'Destination'}
             )
           </span>

@@ -33,7 +33,11 @@ export const searchPlaces = async (query) => {
 
 export const reverseGeocode = async (lat, lon) => {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+    const parsedLat = parseFloat(lat);
+    const parsedLon = parseFloat(lon);
+    if (isNaN(parsedLat) || isNaN(parsedLon)) return null;
+
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${parsedLat}&lon=${parsedLon}`;
     const response = await fetch(url, {
       headers: {
         'Accept-Language': 'en',
@@ -44,6 +48,10 @@ export const reverseGeocode = async (lat, lon) => {
     return {
       displayName: item.display_name,
       address: item.address,
+      lat: parsedLat,
+      lon: parsedLon,
+      city: item.address?.city || item.address?.town || item.address?.village || '',
+      state: item.address?.state || '',
     };
   } catch (error) {
     console.error('Reverse geocode error:', error);

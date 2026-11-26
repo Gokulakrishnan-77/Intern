@@ -332,29 +332,29 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans">
       {/* Top Navigation Bar */}
-      <header className="bg-white border-b border-slate-200 px-6 py-3.5 sticky top-0 z-30 shadow-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 sticky top-0 z-30 shadow-sm">
+        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
           <div
             onClick={() => setCurrentPage(currentUser ? 'dashboard' : 'login')}
-            className="flex items-center gap-2.5 cursor-pointer"
+            className="flex items-center gap-2 cursor-pointer"
           >
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md">
-              <Car className="w-5 h-5" />
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-500 flex items-center justify-center text-white shadow-md shrink-0">
+              <Car className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div>
-              <span className="font-bold text-lg text-slate-900 tracking-tight">
+              <span className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
                 RideShare<span className="text-emerald-600">Local</span>
               </span>
-              <span className="ml-2 text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+              <span className="hidden sm:inline-block ml-2 text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
                 Car, Bike & Scooty Pooling
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
             {/* SQL Database Status Badge */}
             <span
-              className={`text-[10px] px-2.5 py-1 rounded-full font-bold flex items-center gap-1.5 transition-all ${
+              className={`text-[9px] sm:text-[10px] px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-full font-bold flex items-center gap-1 transition-all ${
                 isBackendOnline
                   ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                   : 'bg-slate-100 text-slate-600 border border-slate-200'
@@ -365,14 +365,15 @@ export default function App() {
                   : 'Running in Local Cache Mode (Start backend server to sync SQL)'
               }
             >
-              <Database className={`w-3 h-3 ${isBackendOnline ? 'text-emerald-600' : 'text-slate-400'}`} />
-              <span>{isBackendOnline ? 'SQL Database: Online (PostgreSQL)' : 'SQL: Standby'}</span>
+              <Database className={`w-2.5 h-2.5 sm:w-3 sm:h-3 ${isBackendOnline ? 'text-emerald-600' : 'text-slate-400'}`} />
+              <span className="hidden xs:inline">{isBackendOnline ? 'SQL Online' : 'SQL Standby'}</span>
+              <span className="xs:hidden">{isBackendOnline ? 'SQL' : 'Offline'}</span>
             </span>
 
             {currentUser ? (
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 sm:gap-3">
                 <span
-                  className={`text-xs font-semibold py-1.5 px-3 rounded-lg flex items-center gap-1.5 ${
+                  className={`text-[11px] sm:text-xs font-semibold py-1 px-2 sm:py-1.5 sm:px-3 rounded-lg flex items-center gap-1 ${
                     currentUser.role === 'admin'
                       ? 'bg-amber-100 text-amber-900 border border-amber-200'
                       : currentUser.role === 'driver'
@@ -380,14 +381,16 @@ export default function App() {
                       : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
                   }`}
                 >
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
-                  {currentUser.name} (<strong>{currentUser.role}</strong>)
+                  <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
+                  <span className="truncate max-w-[80px] sm:max-w-none">{currentUser.name}</span>
+                  <span className="hidden sm:inline">({currentUser.role})</span>
                 </span>
                 <button
                   onClick={handleLogout}
-                  className="text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg border border-rose-200 font-medium flex items-center gap-1 transition-colors"
+                  className="text-[11px] sm:text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-lg border border-rose-200 font-medium flex items-center gap-1 transition-colors"
                 >
-                  <LogOut className="w-3.5 h-3.5" /> Sign Out
+                  <LogOut className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                  <span className="hidden xs:inline">Sign Out</span>
                 </button>
               </div>
             ) : (
