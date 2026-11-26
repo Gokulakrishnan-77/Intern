@@ -4,7 +4,7 @@ import Register from './pages/Register';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import DriverDashboard from './pages/driver/DriverDashboard';
 import RiderDashboard from './pages/rider/RiderDashboard';
-import { Car, Bike, Leaf, Shield, User, CheckCircle, LogOut, Database } from 'lucide-react';
+import { Car, Bike, Leaf, Shield, User, CheckCircle, LogOut, Database, RotateCw } from 'lucide-react';
 import api, { authApi, ridesApi, driverApi, adminApi } from './api';
 
 export default function App() {
@@ -19,6 +19,7 @@ export default function App() {
   });
 
   const [isBackendOnline, setIsBackendOnline] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Registry of users - Purge any cached remaining accounts from localStorage
   const [registeredUsers, setRegisteredUsers] = useState(() => {
@@ -54,70 +55,85 @@ export default function App() {
   });
 
   // Synchronize with Real-Time SQL Backend Database
-  useEffect(() => {
-    const syncWithSqlBackend = async () => {
-      try {
-        const health = await api.get('/health');
-        if (health.data?.status === 'ONLINE') {
-          setIsBackendOnline(true);
+  const syncWithSqlBackend = async () => {
+    try {
+      const health = await api.get('/health');
+      if (health.data?.status === 'ONLINE') {
+        setIsBackendOnline(true);
 
-          // 1. Fetch live rides from SQL database
-          const ridesRes = await ridesApi.getRides().catch(() => null);
-          if (ridesRes?.success && ridesRes.rides?.length > 0) {
-            setPublishedRides(ridesRes.rides);
-            try {
-              localStorage.setItem('rideshare_published_rides', JSON.stringify(ridesRes.rides));
-            } catch (e) {}
+        // 1. Fetch live rides from SQL database and merge with existing local published rides
+        const ridesRes = await ridesApi.getRides().catch(() => null);
+        let mergedRides = [];
+        if (ridesRes?.success && ridesRes.rides?.length > 0) {
+          mergedRides = [...ridesRes.rides];
+        }
+
+        try {
+          const localStr = localStorage.getItem('rideshare_published_rides');
+          const localRides = localStr ? JSON.parse(localStr) : [];
+          localRides.forEach((lr) => {
+            if (!mergedRides.some((mr) => mr.id === lr.id)) {
+              mergedRides.push(lr);
+            }
+          });
+        } catch (e) {}
+
+        if (mergedRides.length > 0) {
+          setPublishedRides(mergedRides);
+          try {
+            localStorage.setItem('rideshare_published_rides', JSON.stringify(mergedRides));
+          } catch (e) {}
+        }
+
+        // 2. If Administrator Krish, fetch pending drivers from SQL and merge with local queue
+        if (currentUser?.role === 'admin') {
+          const pendingRes = await adminApi.getPendingDrivers().catch(() => null);
+          let combined = [];
+          if (pendingRes?.success && pendingRes.queue) {
+            combined = [...pendingRes.queue];
           }
-
-          // 2. If Administrator Krish, fetch pending drivers from SQL and merge with local queue
-          if (currentUser?.role === 'admin') {
-            const pendingRes = await adminApi.getPendingDrivers().catch(() => null);
-            let combined = [];
-            if (pendingRes?.success && pendingRes.queue) {
-              combined = [...pendingRes.queue];
-            }
-            try {
-              const localStr = localStorage.getItem('rideshare_pending_drivers');
-              const localQueue = localStr ? JSON.parse(localStr) : [];
-              localQueue.forEach((lq) => {
-                const exists = combined.some(
-                  (c) =>
-                    c.id === lq.id ||
-                    (lq.userId && c.userId === lq.userId) ||
-                    (lq.email && c.email?.toLowerCase() === lq.email?.toLowerCase())
-                );
-                if (!exists) combined.push(lq);
-              });
-            } catch (e) {}
-            if (combined.length > 0) {
-              setPendingDrivers(combined);
-              localStorage.setItem('rideshare_pending_drivers', JSON.stringify(combined));
-            }
-          }
-
-          // 3. If Driver, check real-time verification approval status from SQL database
-          if (currentUser?.role === 'driver') {
-            try {
-              const statusRes = await driverApi.getVerificationStatus();
-              if (statusRes.success && statusRes.verificationStatus) {
-                setDriverVerificationStatus(statusRes.verificationStatus);
-                if (currentUser.verificationStatus !== statusRes.verificationStatus) {
-                  const updated = { ...currentUser, verificationStatus: statusRes.verificationStatus };
-                  setCurrentUser(updated);
-                  localStorage.setItem('rideshare_user', JSON.stringify(updated));
-                }
-              }
-            } catch (dErr) {
-              // ignore
-            }
+          try {
+            const localStr = localStorage.getItem('rideshare_pending_drivers');
+            const localQueue = localStr ? JSON.parse(localStr) : [];
+            localQueue.forEach((lq) => {
+              const exists = combined.some(
+                (c) =>
+                  c.id === lq.id ||
+                  (lq.userId && c.userId === lq.userId) ||
+                  (lq.email && c.email?.toLowerCase() === lq.email?.toLowerCase())
+              );
+              if (!exists) combined.push(lq);
+            });
+          } catch (e) {}
+          if (combined.length > 0) {
+            setPendingDrivers(combined);
+            localStorage.setItem('rideshare_pending_drivers', JSON.stringify(combined));
           }
         }
-      } catch (err) {
-        setIsBackendOnline(false);
-      }
-    };
 
+        // 3. If Driver, check real-time verification approval status from SQL database
+        if (currentUser?.role === 'driver') {
+          try {
+            const statusRes = await driverApi.getVerificationStatus();
+            if (statusRes.success && statusRes.verificationStatus) {
+              setDriverVerificationStatus(statusRes.verificationStatus);
+              if (currentUser.verificationStatus !== statusRes.verificationStatus) {
+                const updated = { ...currentUser, verificationStatus: statusRes.verificationStatus };
+                setCurrentUser(updated);
+                localStorage.setItem('rideshare_user', JSON.stringify(updated));
+              }
+            }
+          } catch (dErr) {
+            // ignore
+          }
+        }
+      }
+    } catch (err) {
+      setIsBackendOnline(false);
+    }
+  };
+
+  useEffect(() => {
     syncWithSqlBackend();
 
     // Keepalive ping every 5 minutes while webpage is open (prevents Render from sleeping)
@@ -127,6 +143,15 @@ export default function App() {
 
     return () => clearInterval(keepAliveInterval);
   }, [currentUser]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await syncWithSqlBackend();
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 600);
+    }
+  };
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
@@ -370,6 +395,17 @@ export default function App() {
               <span className="xs:hidden">{isBackendOnline ? 'SQL' : 'Offline'}</span>
             </span>
 
+            {/* Universal Page Refresh Button */}
+            <button
+              type="button"
+              onClick={handleManualRefresh}
+              className="p-1 sm:px-2.5 sm:py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1 border border-slate-200 transition-colors shadow-xs"
+              title="Refresh Data from Server & Cache"
+            >
+              <RotateCw className={`w-3.5 h-3.5 text-slate-600 ${isRefreshing ? 'animate-spin text-emerald-600' : ''}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </button>
+
             {currentUser ? (
               <div className="flex items-center gap-1.5 sm:gap-3">
                 <span
@@ -462,6 +498,7 @@ export default function App() {
                 currentUser={currentUser}
                 publishedRides={publishedRides}
                 onBookRide={handleBookingConfirmed}
+                onRefreshRides={handleManualRefresh}
               />
             )}
           </>

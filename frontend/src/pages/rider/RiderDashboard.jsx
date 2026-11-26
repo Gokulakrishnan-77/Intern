@@ -28,6 +28,7 @@ import {
   RotateCcw,
   Compass,
   Layers,
+  RotateCw,
 } from 'lucide-react';
 import { GoogleMapView } from '../../components/maps/GoogleMapView';
 import { SmartRouteMapView } from '../../components/maps/SmartRouteMapView';
@@ -68,9 +69,13 @@ const LOCATION_STOP_WORDS = new Set([
 ]);
 
 // STRICT DUAL-MATCHING LOGIC: Matches BOTH Pickup AND Destination
-const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranceKm = 3) => {
-  // Rule 1: Driver must be verified
-  if (ride.driver?.verificationStatus !== 'verified') return false;
+const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranceKm = 10) => {
+  // Rule 1: Driver must be verified (or if verification status not explicitly rejected)
+  const isVerified =
+    ride.driver?.verificationStatus === 'verified' ||
+    ride.verificationStatus === 'verified' ||
+    !ride.driver?.verificationStatus;
+  if (!isVerified) return false;
 
   // Rule 2: Must have at least 1 available seat
   const seats = ride.availableSeats ?? ride.seatsAvailable ?? 0;
@@ -88,58 +93,75 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
     String(riderDestination || '')
   ).toLowerCase();
 
-  const driverOrigText = (ride.origin?.address || ride.origin || '').toLowerCase();
-  const driverDestText = (ride.destination?.address || ride.destination || '').toLowerCase();
+  const driverOrigText = (
+    (typeof ride.origin === 'object' ? (ride.origin?.address || ride.origin?.displayName) : ride.origin) ||
+    ride.originAddress ||
+    ''
+  ).toLowerCase();
 
-  // Extract meaningful keywords: 5+ chars, not stop-words
+  const driverDestText = (
+    (typeof ride.destination === 'object' ? (ride.destination?.address || ride.destination?.displayName) : ride.destination) ||
+    ride.destAddress ||
+    ''
+  ).toLowerCase();
+
+  // Helper to extract key place words (3+ chars, not generic stop words)
   const extractKeywords = (text) =>
     text
       .split(/[\s,\-–—()]+/)
       .map((w) => w.replace(/[^a-z0-9]/g, ''))
-      .filter((w) => w.length >= 5 && !LOCATION_STOP_WORDS.has(w));
+      .filter((w) => w.length >= 3 && !LOCATION_STOP_WORDS.has(w));
 
   const origKeywords = extractKeywords(riderOrigText);
   const destKeywords = extractKeywords(riderDestText);
 
-  // 1. Pickup Point Match — require at least 2 keywords to match, or 1 if only 1 keyword exists
-  const origMatches = origKeywords.filter((kw) => driverOrigText.includes(kw));
-  const minOrigRequired = Math.min(2, origKeywords.length);
-  let pickupMatches = origMatches.length >= minOrigRequired && origMatches.length > 0;
+  // 1. Pickup Point Match
+  // A. Direct substring inclusion
+  const riderOrigFirst = riderOrigText.split(',')[0].trim();
+  const driverOrigFirst = driverOrigText.split(',')[0].trim();
+  let pickupMatches =
+    (driverOrigFirst.length > 2 && riderOrigText.includes(driverOrigFirst)) ||
+    (riderOrigFirst.length > 2 && driverOrigText.includes(riderOrigFirst));
 
-  if (
-    !pickupMatches &&
-    riderOrigin?.lat &&
-    riderOrigin?.lon &&
-    ride.origin?.lat &&
-    ride.origin?.lon
-  ) {
-    const pickupDist = calculateDistanceKm(
-      riderOrigin.lat,
-      riderOrigin.lon,
-      ride.origin.lat,
-      ride.origin.lon
-    );
+  // B. Keyword overlap
+  if (!pickupMatches && origKeywords.length > 0) {
+    const origMatches = origKeywords.filter((kw) => driverOrigText.includes(kw));
+    pickupMatches = origMatches.length > 0;
+  }
+
+  // C. Coordinate proximity fallback
+  const rOrigLat = Number(riderOrigin?.lat);
+  const rOrigLon = Number(riderOrigin?.lon);
+  const dOrigLat = Number(ride.origin?.lat ?? ride.originLat);
+  const dOrigLon = Number(ride.origin?.lon ?? ride.originLon);
+
+  if (!pickupMatches && !isNaN(rOrigLat) && !isNaN(rOrigLon) && !isNaN(dOrigLat) && !isNaN(dOrigLon)) {
+    const pickupDist = calculateDistanceKm(rOrigLat, rOrigLon, dOrigLat, dOrigLon);
     pickupMatches = pickupDist <= toleranceKm;
   }
 
-  // 2. Destination Point Match — same strict keyword logic
-  const destMatches_arr = destKeywords.filter((kw) => driverDestText.includes(kw));
-  const minDestRequired = Math.min(2, destKeywords.length);
-  let destMatches = destMatches_arr.length >= minDestRequired && destMatches_arr.length > 0;
+  // 2. Destination Point Match
+  // A. Direct substring inclusion
+  const riderDestFirst = riderDestText.split(',')[0].trim();
+  const driverDestFirst = driverDestText.split(',')[0].trim();
+  let destMatches =
+    (driverDestFirst.length > 2 && riderDestText.includes(driverDestFirst)) ||
+    (riderDestFirst.length > 2 && driverDestText.includes(riderDestFirst));
 
-  if (
-    !destMatches &&
-    riderDestination?.lat &&
-    riderDestination?.lon &&
-    ride.destination?.lat &&
-    ride.destination?.lon
-  ) {
-    const destDist = calculateDistanceKm(
-      riderDestination.lat,
-      riderDestination.lon,
-      ride.destination.lat,
-      ride.destination.lon
-    );
+  // B. Keyword overlap
+  if (!destMatches && destKeywords.length > 0) {
+    const destMatches_arr = destKeywords.filter((kw) => driverDestText.includes(kw));
+    destMatches = destMatches_arr.length > 0;
+  }
+
+  // C. Coordinate proximity fallback
+  const rDestLat = Number(riderDestination?.lat);
+  const rDestLon = Number(riderDestination?.lon);
+  const dDestLat = Number(ride.destination?.lat ?? ride.destLat);
+  const dDestLon = Number(ride.destination?.lon ?? ride.destLon);
+
+  if (!destMatches && !isNaN(rDestLat) && !isNaN(rDestLon) && !isNaN(dDestLat) && !isNaN(dDestLon)) {
+    const destDist = calculateDistanceKm(rDestLat, rDestLon, dDestLat, dDestLon);
     destMatches = destDist <= toleranceKm;
   }
 
@@ -147,7 +169,7 @@ const doesDriverMatchBothPoints = (ride, riderOrigin, riderDestination, toleranc
   return pickupMatches && destMatches;
 };
 
-export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide }) => {
+export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide, onRefreshRides }) => {
   const [activeTab, setActiveTab] = useState('search'); // 'search' | 'bookings' | 'impact'
 
   // Currency Selection State (INR - ₹ and USD - $)
@@ -551,6 +573,18 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide })
           </div>
 
           <NotificationBell currentUser={currentUser} />
+
+          {onRefreshRides && (
+            <button
+              type="button"
+              onClick={onRefreshRides}
+              className="px-3 py-2 rounded-xl text-xs font-bold bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all flex items-center gap-1.5 shadow-sm"
+              title="Refresh Rides & Database Status"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Refresh Rides</span>
+            </button>
+          )}
 
           <div className="bg-white/10 backdrop-blur-md rounded-xl p-3 border border-white/15 text-xs text-left min-w-[200px]">
             <div className="flex items-center justify-between text-slate-200">

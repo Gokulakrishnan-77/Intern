@@ -34,6 +34,7 @@ import {
   Phone,
   Mail,
   CheckCheck,
+  RotateCw,
 } from 'lucide-react';
 import { GoogleMapView } from '../../components/maps/GoogleMapView';
 import { LocationAutocomplete } from '../../components/maps/LocationAutocomplete';
@@ -177,7 +178,23 @@ export const DriverDashboard = ({
     ? Math.max(1.5, Number((calculateFairCost(16.4, 1) * 0.45).toFixed(2))) // ~50% cheaper fuel split
     : calculateFairCost(16.4, availableSeats);
 
-  const [myRides, setMyRides] = useState([]);
+  // Load initially from local storage for instant responsiveness & across login/logout
+  const [myRides, setMyRides] = useState(() => {
+    try {
+      const saved = localStorage.getItem('rideshare_published_rides');
+      const allRides = saved ? JSON.parse(saved) : [];
+      if (currentUser?.id || currentUser?.name || currentUser?.email) {
+        return allRides.filter((r) =>
+          r.driver?.id === currentUser?.id ||
+          r.driver?.email?.toLowerCase() === currentUser?.email?.toLowerCase() ||
+          r.driver?.name?.toLowerCase() === currentUser?.name?.toLowerCase()
+        );
+      }
+      return allRides;
+    } catch (e) {
+      return [];
+    }
+  });
 
   // Rider Booking Notifications & Messages State
   const [riderMessages, setRiderMessages] = useState(() => {
@@ -197,19 +214,50 @@ export const DriverDashboard = ({
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpNotice, setOtpNotice] = useState(null);
 
-  // Fetch driver rides from backend
+  // Fetch driver rides from backend and merge with local storage
   const fetchMyRides = async () => {
     try {
-      const res = await ridesApi.getMyRides();
+      // 1. Gather all local rides published by this driver
+      let driverLocalRides = [];
+      try {
+        const saved = localStorage.getItem('rideshare_published_rides');
+        const allRides = saved ? JSON.parse(saved) : [];
+        driverLocalRides = allRides.filter((r) =>
+          r.driver?.id === currentUser?.id ||
+          r.driver?.email?.toLowerCase() === currentUser?.email?.toLowerCase() ||
+          r.driver?.name?.toLowerCase() === currentUser?.name?.toLowerCase()
+        );
+      } catch (e) {}
+
+      // 2. Query backend if online
+      const res = await ridesApi.getMyRides().catch(() => null);
+      let backendRides = [];
       if (res?.success && res.rides) {
-        setMyRides((prev) => {
-          const merged = [...res.rides];
-          prev.forEach((p) => {
-            if (!merged.some((m) => m.id === p.id)) merged.push(p);
-          });
-          return merged;
-        });
+        backendRides = res.rides.map((r) => ({
+          ...r,
+          origin: typeof r.origin === 'object' ? r.origin?.address || r.origin : (r.originAddress || r.origin),
+          destination: typeof r.destination === 'object' ? r.destination?.address || r.destination : (r.destAddress || r.destination),
+          originData: typeof r.origin === 'object' ? r.origin : { address: r.originAddress, lat: r.originLat, lon: r.originLon },
+          destData: typeof r.destination === 'object' ? r.destination : { address: r.destAddress, lat: r.destLat, lon: r.destLon },
+        }));
       }
+
+      setMyRides((prev) => {
+        const combined = [...backendRides];
+        // Merge driverLocalRides
+        driverLocalRides.forEach((dl) => {
+          if (!combined.some((c) => c.id === dl.id)) {
+            combined.push(dl);
+          }
+        });
+        // Merge any current in-memory rides
+        prev.forEach((p) => {
+          if (!combined.some((c) => c.id === p.id)) {
+            combined.push(p);
+          }
+        });
+        return combined;
+      });
     } catch (_) {}
   };
 
@@ -726,9 +774,12 @@ export const DriverDashboard = ({
       return;
     }
 
+    const originDisplay = origin.displayName || origin.address || 'Origin Point';
+    const destinationDisplay = destination.displayName || destination.address || 'Destination Point';
+
     const newRide = {
       id: 'ride_' + Date.now(),
-      routeTitle: `${origin.displayName.split(',')[0]} → ${destination.displayName.split(',')[0]} (${
+      routeTitle: `${originDisplay.split(',')[0]} → ${destinationDisplay.split(',')[0]} (${
         verificationForm.vehicleType === 'bike'
           ? 'Motorcycle'
           : verificationForm.vehicleType === 'scooty'
@@ -739,6 +790,7 @@ export const DriverDashboard = ({
       driver: {
         id: currentUser?.id,
         name: currentUser?.name || 'Driver',
+        email: currentUser?.email,
         verificationStatus: 'verified',
         vehicle: {
           type: verificationForm.vehicleType,
@@ -750,8 +802,25 @@ export const DriverDashboard = ({
           helmetProvided: verificationForm.helmetProvided,
         },
       },
-      origin: origin.displayName,
-      destination: destination.displayName,
+      // Both object & string representation for backward & component compatibility
+      origin: {
+        address: originDisplay,
+        displayName: originDisplay,
+        lat: origin.lat,
+        lon: origin.lon,
+      },
+      destination: {
+        address: destinationDisplay,
+        displayName: destinationDisplay,
+        lat: destination.lat,
+        lon: destination.lon,
+      },
+      originAddress: originDisplay,
+      destAddress: destinationDisplay,
+      originLat: origin.lat,
+      originLon: origin.lon,
+      destLat: destination.lat,
+      destLon: destination.lon,
       departureTime: isRecurring
         ? `${recurringDays.join(', ')} at ${departureTime}`
         : `Today at ${departureTime}`,
@@ -760,6 +829,7 @@ export const DriverDashboard = ({
       pricePerSeat: calculatedFairCost,
       isRecurring,
       recurringDays,
+      status: 'published',
     };
 
     setMyRides([newRide, ...myRides]);
@@ -1661,6 +1731,15 @@ export const DriverDashboard = ({
             <h3 className="text-sm font-bold text-slate-900">
               My Active Commute Routes ({myRides.length})
             </h3>
+            <button
+              type="button"
+              onClick={fetchMyRides}
+              className="py-1.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-300"
+              title="Refresh your published rides"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>Refresh Commutes</span>
+            </button>
           </div>
 
           {myRides.length === 0 ? (
@@ -1697,8 +1776,12 @@ export const DriverDashboard = ({
                   </div>
 
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
-                    <p className="text-slate-800"><strong>From:</strong> {ride.origin}</p>
-                    <p className="text-slate-800"><strong>To:</strong> {ride.destination}</p>
+                    <p className="text-slate-800">
+                      <strong>From:</strong> {typeof ride.origin === 'object' ? (ride.origin?.address || ride.origin?.displayName) : ride.origin}
+                    </p>
+                    <p className="text-slate-800">
+                      <strong>To:</strong> {typeof ride.destination === 'object' ? (ride.destination?.address || ride.destination?.displayName) : ride.destination}
+                    </p>
                     <p className="text-slate-500 pt-1"><strong>Schedule:</strong> {ride.departureTime}</p>
                   </div>
 
