@@ -18,17 +18,56 @@ const haversineKm = (lat1, lon1, lat2, lon2) => {
   return R * c;
 };
 
+// Helper: Normalize first part of address before first comma (lowercase, punctuation removed, trimmed)
+export const normalizeLocationKey = (address) => {
+  if (!address) return '';
+  const firstPart = String(address).split(',')[0] || '';
+  return firstPart
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim()
+    .replace(/\s+/g, ' ');
+};
+
 // ── GET RIDES (Rider Search) ─────────────────────────────────────────────────
-// Only returns rides with status published/scheduled AND availableSeats > 0
+// Only returns rides with status published/scheduled/ACTIVE AND availableSeats > 0
 export const getRides = async (req, res) => {
   try {
-    const { originLat, originLon, destLat, destLon, vehicleType, toleranceKm = 5 } = req.query;
+    const { fromKey, toKey, originLat, originLon, destLat, destLon, vehicleType, toleranceKm = 5 } = req.query;
+
+    const whereClause = {
+      status: { [Op.in]: ['published', 'scheduled', 'ACTIVE', 'active'] },
+      availableSeats: { [Op.gt]: 0 },
+    };
+
+    if (fromKey) {
+      const normFrom = normalizeLocationKey(fromKey);
+      if (normFrom) {
+        whereClause[Op.or] = whereClause[Op.or] || [];
+        whereClause[Op.or].push(
+          { fromKey: normFrom },
+          { fromKey: { [Op.iLike]: `%${normFrom}%` } },
+          { originAddress: { [Op.iLike]: `%${normFrom}%` } }
+        );
+      }
+    }
+
+    if (toKey) {
+      const normTo = normalizeLocationKey(toKey);
+      if (normTo) {
+        whereClause[Op.and] = whereClause[Op.and] || [];
+        whereClause[Op.and].push({
+          [Op.or]: [
+            { toKey: normTo },
+            { toKey: { [Op.iLike]: `%${normTo}%` } },
+            { destAddress: { [Op.iLike]: `%${normTo}%` } }
+          ]
+        });
+      }
+    }
 
     const allRides = await Ride.findAll({
-      where: {
-        status: { [Op.in]: ['published', 'scheduled'] },
-        availableSeats: { [Op.gt]: 0 },
-      },
+      where: whereClause,
       include: [
         {
           model: User,
@@ -57,6 +96,8 @@ export const getRides = async (req, res) => {
         pricePerSeat: r.pricePerSeat,
         distanceKm: r.distanceKm,
         co2SavedKg: r.co2SavedKg,
+        fromKey: r.fromKey || normalizeLocationKey(r.originAddress),
+        toKey: r.toKey || normalizeLocationKey(r.destAddress),
         isRecurring: r.isRecurring,
         recurringDays: JSON.parse(r.recurringDays || '[]'),
         status: r.status,
@@ -118,12 +159,35 @@ export const createRide = async (req, res) => {
       distanceKm,
       isRecurring,
       recurringDays,
+      status,
     } = req.body;
 
     const driverId = req.user.id;
 
     const originAddr = typeof origin === 'object' ? origin.displayName || origin.address : origin;
     const destAddr = typeof destination === 'object' ? destination.displayName || destination.address : destination;
+
+    const fromKey = normalizeLocationKey(originAddr);
+    const toKey = normalizeLocationKey(destAddr);
+
+    // Duplicate check: Block duplicate rides with the same driver, from, to, time and schedule
+    const existingDuplicate = await Ride.findOne({
+      where: {
+        driverId,
+        originAddress: originAddr,
+        destAddress: destAddr,
+        departureTime: departureTime || '08:30 AM',
+        status: { [Op.in]: ['published', 'scheduled', 'ACTIVE', 'active'] },
+      },
+    });
+
+    if (existingDuplicate) {
+      return res.status(200).json({
+        success: true,
+        message: 'Identical ride already active. Using existing published commute.',
+        ride: existingDuplicate,
+      });
+    }
 
     const originLat = typeof origin === 'object' && origin.lat ? Number(origin.lat) : 12.985;
     const originLon = typeof origin === 'object' && origin.lon ? Number(origin.lon) : 77.605;
@@ -135,9 +199,11 @@ export const createRide = async (req, res) => {
       driverId,
       routeTitle: routeTitle || `${originAddr?.split(',')[0]} → ${destAddr?.split(',')[0]}`,
       originAddress: originAddr || 'Origin Point',
+      fromKey,
       originLat,
       originLon,
       destAddress: destAddr || 'Destination Point',
+      toKey,
       destLat,
       destLon,
       departureTime: departureTime || '08:30 AM',
@@ -147,7 +213,7 @@ export const createRide = async (req, res) => {
       distanceKm: distanceKm || 14.8,
       isRecurring: !!isRecurring,
       recurringDays: JSON.stringify(recurringDays || []),
-      status: 'published',
+      status: 'ACTIVE',
     });
 
     return res.status(201).json({

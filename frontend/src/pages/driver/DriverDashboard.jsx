@@ -263,7 +263,10 @@ export const DriverDashboard = ({
 
   useEffect(() => {
     fetchMyRides();
-  }, []);
+    // Real-time polling every 3 seconds for instant updates across devices without page reload
+    const interval = setInterval(fetchMyRides, 3000);
+    return () => clearInterval(interval);
+  }, [currentUser]);
 
   // Helper to sync updated status to localStorage notifications
   const updateLocalNotificationStatus = (bookingId, newStatus, extraData = {}) => {

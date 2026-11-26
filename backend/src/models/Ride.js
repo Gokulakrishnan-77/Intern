@@ -25,6 +25,10 @@ export const Ride = sequelize.define(
       type: DataTypes.TEXT,
       allowNull: false,
     },
+    fromKey: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
     originLat: {
       type: DataTypes.FLOAT,
       allowNull: false,
@@ -36,6 +40,10 @@ export const Ride = sequelize.define(
     destAddress: {
       type: DataTypes.TEXT,
       allowNull: false,
+    },
+    toKey: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     destLat: {
       type: DataTypes.FLOAT,

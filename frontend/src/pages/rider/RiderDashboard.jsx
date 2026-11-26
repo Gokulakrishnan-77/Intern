@@ -37,7 +37,7 @@ import { BookingModal } from '../../components/rides/BookingModal';
 import { reverseGeocode } from '../../services/nominatim';
 import { getSmartRoutes } from '../../services/osrm';
 import { getSavedCurrency, saveCurrency, formatFare, convertFare } from '../../utils/currency';
-import { bookingsApi, reviewsApi } from '../../api';
+import { bookingsApi, reviewsApi, ridesApi } from '../../api';
 import { NotificationBell } from '../../components/common/NotificationBell';
 
 // Helper: Haversine distance in km between two lat/lon coordinates
@@ -279,11 +279,44 @@ export const RiderDashboard = ({ currentUser, publishedRides = [], onBookRide, o
     setSelectedRouteIndex(0);
   };
 
+  // Live Cloud Database Rides State
+  const [cloudRides, setCloudRides] = useState([]);
+
+  // Fetch real-time rides from Shared Cloud Database (PostgreSQL / Backend API)
+  const fetchCloudRides = async () => {
+    try {
+      const res = await ridesApi.getRides();
+      if (res?.success && Array.isArray(res.rides)) {
+        setCloudRides(res.rides);
+      }
+    } catch (e) {
+      // Backend fallback
+    }
+  };
+
+  useEffect(() => {
+    fetchCloudRides();
+    // Real-time polling every 3 seconds so rides appear without manual refresh across devices
+    const interval = setInterval(fetchCloudRides, 3000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Combine rides from shared cloud database and any props
+  const allAvailableRides = React.useMemo(() => {
+    const combined = [...cloudRides];
+    publishedRides.forEach((pr) => {
+      if (!combined.some((c) => c.id === pr.id)) {
+        combined.push(pr);
+      }
+    });
+    return combined;
+  }, [cloudRides, publishedRides]);
+
   // LOCATION-BASED DRIVER MATCHING & SORTING:
   // 1. Matches drivers whose published route matches BOTH pickup and destination
   // 2. Calculates distance between rider's pickup and driver's origin
   // 3. Sorts drivers with closest proximity first
-  const strictlyMatchedDrivers = publishedRides
+  const strictlyMatchedDrivers = allAvailableRides
     .filter((ride) => doesDriverMatchBothPoints(ride, origin, destination, detourTolerance))
     .map((ride) => {
       const pDist =
