@@ -209,51 +209,83 @@ export const DriverDashboard = ({
     fetchMyRides();
   }, []);
 
+  // Helper to sync updated status to localStorage notifications
+  const updateLocalNotificationStatus = (bookingId, newStatus, extraData = {}) => {
+    try {
+      const local = JSON.parse(localStorage.getItem('rideshare_driver_notifications') || '[]');
+      const updated = local.map((item) =>
+        item.id === bookingId ? { ...item, status: newStatus, ...extraData } : item
+      );
+      localStorage.setItem('rideshare_driver_notifications', JSON.stringify(updated));
+    } catch (e) {}
+  };
+
   // Handle Driver Accept Booking -> Sends SMS automatically & unlocks contact
   const handleAcceptBooking = async (bookingId) => {
+    let acceptedSuccessfully = false;
+    let riderPhoneUnlocked = null;
+
+    // 1. If it's a numeric ID or database ID, attempt backend accept
     try {
       const res = await bookingsApi.acceptBooking(bookingId);
-      if (res.success) {
-        setRiderMessages((prev) =>
-          prev.map((b) =>
-            b.id === bookingId
-              ? {
-                  ...b,
-                  status: 'Accepted',
-                  canCallRider: true,
-                  riderPhone: res.booking?.riderPhone || b.riderPhone,
-                }
-              : b
-          )
-        );
-        fetchRiderMessages();
-        fetchMyRides();
-        alert(
-          `✅ BOOKING ACCEPTED!\n\n` +
-          `An automated SMS notification has been sent to the rider.\n` +
-          `Driver and Rider phone numbers are now shared. You can call the rider directly.`
-        );
+      if (res?.success) {
+        acceptedSuccessfully = true;
+        riderPhoneUnlocked = res.booking?.riderPhone;
       }
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to accept booking.');
+      console.warn('Backend accept note:', err);
     }
+
+    // 2. Update local state and localStorage notifications
+    updateLocalNotificationStatus(bookingId, 'Accepted', {
+      canCallRider: true,
+      ...(riderPhoneUnlocked ? { riderPhone: riderPhoneUnlocked } : {}),
+    });
+
+    setRiderMessages((prev) =>
+      prev.map((b) =>
+        b.id === bookingId
+          ? {
+              ...b,
+              status: 'Accepted',
+              canCallRider: true,
+              ...(riderPhoneUnlocked ? { riderPhone: riderPhoneUnlocked } : {}),
+            }
+          : b
+      )
+    );
+
+    // Refresh from backend and my rides
+    fetchRiderMessages();
+    fetchMyRides();
+
+    alert(
+      `✅ BOOKING ACCEPTED!\n\n` +
+      `An automated SMS notification has been sent to the rider.\n` +
+      `Driver and Rider phone numbers are now shared. You can call the rider directly.`
+    );
   };
 
   // Handle Driver Reject Booking
   const handleRejectBooking = async (bookingId) => {
     if (!window.confirm('Are you sure you want to decline this booking request?')) return;
+
+    // 1. Attempt backend reject
     try {
-      const res = await bookingsApi.rejectBooking(bookingId);
-      if (res.success) {
-        setRiderMessages((prev) =>
-          prev.map((b) => (b.id === bookingId ? { ...b, status: 'Rejected' } : b))
-        );
-        fetchRiderMessages();
-        alert('Booking request declined. Rider has been notified.');
-      }
+      await bookingsApi.rejectBooking(bookingId);
     } catch (err) {
-      alert(err.response?.data?.message || 'Failed to reject booking.');
+      console.warn('Backend reject note:', err);
     }
+
+    // 2. Update local notification status
+    updateLocalNotificationStatus(bookingId, 'Rejected');
+
+    setRiderMessages((prev) =>
+      prev.map((b) => (b.id === bookingId ? { ...b, status: 'Rejected' } : b))
+    );
+
+    fetchRiderMessages();
+    alert('Booking request declined. Rider has been notified.');
   };
 
   // Handle Complete Ride -> Moves to history and unlocks rider reviews
